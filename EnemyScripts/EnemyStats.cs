@@ -1,10 +1,12 @@
-using System.Collections;
 using System.Collections.Generic;
 using UnityEngine;
 using TMPro;
 
 public class EnemyStats : CharacterStats
 {
+    [Header("Enemy Data (VolitelnÈ)")]
+    public EnemyData data; // Pokud sem nÏco d·ö, p¯epÌöe to hodnoty nÌûe
+
     [Header("Enemy Info")]
     public string enemyName = "Enemy";
 
@@ -42,35 +44,36 @@ public class EnemyStats : CharacterStats
     private int _startBaseDamage;
     private bool _initialized = false;
 
-    public EnemyData data;
-
     void Awake()
     {
-        // Pokud m·me p¯i¯azen· data, naËteme je
+        // 1. Pokud m·me Data (Scriptable Object), naËteme je a PÿEPÕäEME Inspector
         if (data != null)
         {
             enemyName = data.enemyName;
-            maxHealth = data.maxHealth; // NaËteme z·klad
+            maxHealth = data.maxHealth;
             baseDamage = data.baseDamage;
-            lootTable = data.lootTable;
-            lootPrefab = data.lootPrefab;
 
-            // UloûÌme pro levelov·nÌ
-            _startMaxHealth = maxHealth;
-            _startBaseDamage = baseDamage;
+            // Loot naËteme jen pokud v Inspectoru nic nenÌ (aby öel p¯epsat manu·lnÏ)
+            if (lootTable == null || lootTable.Count == 0) lootTable = data.lootTable;
+            if (lootPrefab == null) lootPrefab = data.lootPrefab;
         }
+
+        // 2. UloûÌme si startovnÌ hodnoty (aù uû jsou z Dat nebo z Inspectoru)
+        _startMaxHealth = maxHealth;
+        _startBaseDamage = baseDamage;
+
+        // 3. Z·chrann· brzda: Pokud je i teÔ 0, d·me tam aspoÚ nÏco, aby neum¯el hned
+        if (_startMaxHealth <= 0) _startMaxHealth = 50;
+        if (_startBaseDamage <= 0) _startBaseDamage = 5;
     }
-    // ... zbytek skriptu (Start, Lev
 
     public override void Start()
     {
-        // Pokud nebyl level nastaven externÏ, inicializujeme teÔ
         if (!_initialized)
         {
             ApplyLevelStats();
         }
 
-        // --- AUTOMATICK… HLED¡NÕ UI ---
         if (healthBar == null) healthBar = GetComponentInChildren<HealthBar>();
 
         if (levelText == null)
@@ -84,13 +87,11 @@ public class EnemyStats : CharacterStats
             Transform nameObj = transform.Find("HealthCanvas/NameText");
             if (nameObj != null) nameText = nameObj.GetComponent<TMP_Text>();
         }
-        // -----------------------------
 
-        base.Start(); // Zavol· Start rodiËe (nastavÌ currentHealth)
+        base.Start();
         UpdateUI();
     }
 
-    // Vol·no z Gener·toru
     public void SetLevel(int newLevel)
     {
         level = newLevel;
@@ -99,21 +100,7 @@ public class EnemyStats : CharacterStats
 
     void ApplyLevelStats()
     {
-        // 1. Z¡CHRANA PROTI NUL¡M
-        // Pokud v Inspectoru nÏkdo nechal 0, nastavÌme z·kladnÌ hodnoty.
-        if (_startMaxHealth <= 0)
-        {
-            _startMaxHealth = 50; // Default HP
-            // Pokud jsme to zjistili aû teÔ, aktualizujeme i p˘vodnÌ promÏnnou
-            maxHealth = 50;
-        }
-        if (_startBaseDamage <= 0)
-        {
-            _startBaseDamage = 5; // Default Damage
-            baseDamage = 5;
-        }
-
-        // 2. V›PO»ET STATŸ PODLE LEVELU
+        // Vûdy poËÌt·me od _startMaxHealth, coû je teÔ bezpeËnÏ nastavenÈ v Awake
         if (level > 1)
         {
             maxHealth = _startMaxHealth + ((level - 1) * healthPerLevel);
@@ -121,15 +108,12 @@ public class EnemyStats : CharacterStats
         }
         else
         {
-            // Pro Level 1 pouûijeme Ëist˝ z·klad
             maxHealth = _startMaxHealth;
             baseDamage = _startBaseDamage;
         }
 
-        // 3. INICIALIZACE éIVOTA
         currentHealth = maxHealth;
         _initialized = true;
-
         UpdateUI();
     }
 
@@ -142,124 +126,73 @@ public class EnemyStats : CharacterStats
 
     public override void TakeDamage(int damage)
     {
-        // 1. KONTROLA ARCHERA (EVASION)
         SkeletonArcherAI archerAI = GetComponent<SkeletonArcherAI>();
+        if (archerAI != null && archerAI.IsEvading()) return;
 
-        if (archerAI != null && archerAI.IsEvading())
-        {
-            // --- NOV› V›PIS: ⁄SPÃäN› ⁄HYB ---
-            Debug.Log("<color=green> ARCHER: St¯ela mÏ minula! (Jsem v ˙hybu -> 0 Damage)</color>");
-            return;
-        }
-
-        // 2. KONTROLA WARRIORA (BLOCK - ätÌt)
-        // Nejd¯Ìv musÌme zÌskat Anim·tor
         Animator anim = GetComponent<Animator>();
-
-        // A musÌme zjistit, jestli je to Warrior. 
-        // Pokud bychom se zeptali Archera na "IsBlocking", hodil by Error, protoûe ten parametr nem·.
         SkeletonWarriorAI warriorAI = GetComponent<SkeletonWarriorAI>();
+        if (warriorAI != null && anim != null && anim.GetBool("IsBlocking")) return;
 
-        if (warriorAI != null && anim != null)
-        {
-            // Pt·me se na blokov·nÌ jen pokud je to Warrior
-            if (anim.GetBool("IsBlocking"))
-            {
-                return; // Zblokov·no ötÌtem, ignorujeme poökozenÌ
-            }
-        }
-
-        // 3. UDÃLENÕ POäKOZENÕ (Z·kladnÌ logika - odeËtenÌ HP)
         base.TakeDamage(damage);
 
-        // 4. SPUäTÃNÕ ANIMACE "HIT"
-        if (anim != null)
-        {
-            anim.SetTrigger("Hit");
-        }
+        if (anim != null) anim.SetTrigger("Hit");
 
-        // 5. AGGRO (UpozornÏnÌ AI, ûe jsme pod ˙tokem)
-        // ProbudÌme jak˝koliv typ AI, kter˝ na tomto objektu je
         EnemyAI ai = GetComponent<EnemyAI>();
         if (ai != null) ai.TriggerAggro();
 
         if (warriorAI != null) warriorAI.TriggerAggro();
-
         if (archerAI != null) archerAI.TriggerAggro();
 
-        // SpecifickÈ pro Slima (ten m· vlastnÌ metodu pro Hurt animaci)
         SlimeAI slime = GetComponent<SlimeAI>();
         if (slime != null) slime.TriggerHurtAnim();
 
-        // 6. OMR¡»ENÕ (STUN)
-        // ZastavÌme AI na chvÌli, aby se p¯ehr·la animace bolesti a neutÌkal d·l
         StartCoroutine(StunRoutine());
     }
 
-    // --- POMOCN¡ COROUTINA PRO OMR¡»ENÕ ---
     System.Collections.IEnumerator StunRoutine()
     {
-        // ZÌsk·me reference na moûnÈ AI skripty na tomto objektu
         EnemyAI ai = GetComponent<EnemyAI>();
         SkeletonWarriorAI warriorAI = GetComponent<SkeletonWarriorAI>();
         SkeletonArcherAI archerAI = GetComponent<SkeletonArcherAI>();
         SlimeAI slimeAI = GetComponent<SlimeAI>();
 
-        // VYPNOUT AI (ZastavÌ logiku pohybu a ˙toËenÌ)
         if (ai != null) ai.enabled = false;
         if (warriorAI != null) warriorAI.enabled = false;
         if (archerAI != null) archerAI.enabled = false;
         if (slimeAI != null) slimeAI.enabled = false;
 
-        // »ek·me dÈlku animace Hurt (cca 0.4 sekundy)
         yield return new WaitForSeconds(0.4f);
 
-        // ZAPNOUT AI (Vr·tÌ se k norm·lnÌmu chov·nÌ)
         if (ai != null) ai.enabled = true;
         if (warriorAI != null) warriorAI.enabled = true;
         if (archerAI != null) archerAI.enabled = true;
         if (slimeAI != null) slimeAI.enabled = true;
     }
 
-
     public override void Die()
     {
         base.Die();
-
-        // XP pro hr·Ëe
         GameObject player = GameObject.FindGameObjectWithTag("Player");
         if (player != null)
         {
             int finalXp = baseXpReward + ((level - 1) * xpRewardPerLevel);
             player.GetComponent<PlayerStats>()?.AddXP(finalXp);
         }
-
         DropLoot();
-
-        // ZniËenÌ objektu
         Destroy(gameObject);
     }
 
     void DropLoot()
     {
         if (lootPrefab == null || lootTable == null) return;
-
         foreach (LootEntry entry in lootTable)
         {
-            float roll = UnityEngine.Random.Range(0f, 100f);
-
-            if (roll <= entry.dropChance)
+            if (UnityEngine.Random.Range(0f, 100f) <= entry.dropChance)
             {
-                Vector3 scatterOffset = (Vector3)UnityEngine.Random.insideUnitCircle * scatterRadius;
-                Vector3 spawnPos = transform.position + scatterOffset;
-
+                Vector3 spawnPos = transform.position + (Vector3)UnityEngine.Random.insideUnitCircle * scatterRadius;
                 GameObject loot = Instantiate(lootPrefab, spawnPos, Quaternion.identity);
-
-                LootPickup pickupScript = loot.GetComponent<LootPickup>();
-                if (pickupScript != null)
-                {
-                    pickupScript.SetItem(entry.item);
-                }
+                LootPickup pickup = loot.GetComponent<LootPickup>();
+                if (pickup != null) pickup.SetItem(entry.item);
             }
         }
     }
