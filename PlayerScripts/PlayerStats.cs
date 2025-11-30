@@ -70,7 +70,54 @@ public class PlayerStats : CharacterStats
         // Aktualizace HP Baru (protože se zmìnilo Max HP a uzdravili jsme se)
         UpdateHealthUI(); // Metoda z rodièe (CharacterStats)
     }
+    // Pøepíšeme metodu TakeDamage, abychom pøidali animaci
+    public override void TakeDamage(int damage)
+    {
+        base.TakeDamage(damage); // Zavolá odeètení životù
 
+        Animator anim = GetComponent<Animator>();
+        if (anim != null)
+        {
+            anim.SetTrigger("Hit"); // Spustí "Hurt" animaci
+        }
+    }
+
+    public override void Die()
+    {
+        Debug.Log("Hráè zemøel!");
+
+        // 1. Spustíme animaci
+        Animator anim = GetComponent<Animator>();
+        if (anim != null) anim.SetTrigger("Die");
+
+        // 2. ZAKÁŽEME POHYB A OVLÁDÁNÍ
+        // Vypneme skript pro pohyb
+        PlayerMovement pm = GetComponent<PlayerMovement>();
+        if (pm != null) pm.enabled = false;
+
+        // Vypneme Input System (aby nešlo ani útoèit)
+        UnityEngine.InputSystem.PlayerInput pi = GetComponent<UnityEngine.InputSystem.PlayerInput>();
+        if (pi != null) pi.enabled = false;
+
+        // 3. Vypneme fyziku (aby do mrtvoly nešlo strkat)
+        Rigidbody2D rb = GetComponent<Rigidbody2D>();
+        if (rb != null)
+        {
+            rb.linearVelocity = Vector2.zero; // Zastavit na místì
+            rb.bodyType = RigidbodyType2D.Kinematic; // Už nereaguje na nárazy
+        }
+
+        // 4. Restart hry (po chvilce)
+        StartCoroutine(RestartLevelRoutine());
+    }
+
+    System.Collections.IEnumerator RestartLevelRoutine()
+    {
+        yield return new WaitForSeconds(3f); // Poèkáme 3 vteøiny
+        UnityEngine.SceneManagement.SceneManager.LoadScene(
+            UnityEngine.SceneManagement.SceneManager.GetActiveScene().name
+        );
+    }
     // Nová pomocná metoda pro aktualizaci XP a Levelu
     void UpdateLevelUI()
     {
@@ -87,11 +134,7 @@ public class PlayerStats : CharacterStats
         }
     }
 
-    public override void Die()
-    {
-        base.Die();
-        SceneManager.LoadScene(SceneManager.GetActiveScene().name);
-    }
+    
 
     public int GetTotalDamage(int weaponBaseDamage = 0, float weaponMultiplier = 1f)
     {

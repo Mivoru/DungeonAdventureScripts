@@ -37,6 +37,9 @@ public class DungeonGenerator : MonoBehaviour
     public TileBase floorShadow; // Sem dej ten Rule Tile
     public TileBase wallShadow;  // Sem dej ten plný èerný ètverec (Full Shadow)
 
+    [Header("Spawn Room (Start)")]
+    public Vector2Int spawnRoomSize = new Vector2Int(10, 10); // Fixní velikost 10x10
+
     // --- SKUPINY NEPØÁTEL ---
     [System.Serializable]
     public class EnemyGroup
@@ -469,6 +472,7 @@ public class DungeonGenerator : MonoBehaviour
             if (triang.vertices.Length > 0)
             {
                 Debug.Log($" NavMesh OK! Vertices: {triang.vertices.Length}");
+                MovePlayerToStart();
                 SpawnEnemyGroups();
                 SpawnSoloEnemies();
             }
@@ -543,6 +547,33 @@ public class DungeonGenerator : MonoBehaviour
                     spawnedCount++;
                 }
             }
+        }
+    }
+    void MovePlayerToStart()
+    {
+        GameObject player = GameObject.FindGameObjectWithTag("Player");
+
+        // rooms[0] je naše Spawn Room (protože ji vytváøíme jako první)
+        if (player != null && rooms.Count > 0)
+        {
+            // Vypoèítáme støed (+0.5 aby to bylo uprostøed dlaždice)
+            Vector3 startPos = new Vector3(rooms[0].center.x + 0.5f, rooms[0].center.y + 0.5f, 0);
+
+            // Použijeme NavMesh.SamplePosition, abychom mìli jistotu, že hráè nebude ve zdi
+            NavMeshHit hit;
+            // Hledáme v okruhu 5 metrù od støedu místnosti
+            if (NavMesh.SamplePosition(startPos, out hit, 5.0f, NavMesh.AllAreas))
+            {
+                player.transform.position = hit.position;
+            }
+            else
+            {
+                player.transform.position = startPos; // Záloha, kdyby NavMesh selhal
+            }
+
+            // Resetujeme fyziku, aby hráè neodletìl setrvaèností
+            Rigidbody2D rb = player.GetComponent<Rigidbody2D>();
+            if (rb != null) rb.linearVelocity = Vector2.zero;
         }
     }
 }

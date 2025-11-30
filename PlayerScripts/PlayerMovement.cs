@@ -5,7 +5,6 @@ using UnityEngine.InputSystem;
 [RequireComponent(typeof(Rigidbody2D))]
 public class PlayerMovement : MonoBehaviour
 {
-    // Rychlost už nebereme veřejně, ale ze statistik
     public float sprintSpeedMultiplier = 1.8f;
 
     [Header("Dash Settings")]
@@ -16,7 +15,8 @@ public class PlayerMovement : MonoBehaviour
     private Rigidbody2D rb;
     private PlayerInput playerInput;
     private Camera mainCamera;
-    private PlayerStats stats; // Odkaz na statistiky
+    private PlayerStats stats;
+    private Animator anim; // PŘIDÁNO: Proměnná pro animátor
 
     private Vector2 movementInput;
     private Vector2 mousePosition;
@@ -31,21 +31,27 @@ public class PlayerMovement : MonoBehaviour
         rb = GetComponent<Rigidbody2D>();
         playerInput = GetComponent<PlayerInput>();
         mainCamera = Camera.main;
-
-        // Získáme statistiky z komponenty PlayerStats
         stats = GetComponent<PlayerStats>();
+
+        // PŘIDÁNO: Získání animátoru
+        anim = GetComponent<Animator>();
 
         rb.gravityScale = 0;
         rb.interpolation = RigidbodyInterpolation2D.Interpolate;
 
-        // Aktivace Input Mapy
         if (playerInput != null)
         {
             playerInput.actions.FindActionMap("Player").Enable();
         }
     }
 
-    // === INPUT EVENTY ===
+    // Zajistíme, že mapa Player bude aktivní (pojistka)
+    void Start()
+    {
+        if (playerInput != null) playerInput.SwitchCurrentActionMap("Player");
+        if (stats != null) currentSpeed = stats.movementSpeed; // Inicializace rychlosti
+    }
+
     public void OnMove(InputAction.CallbackContext context)
     {
         movementInput = context.ReadValue<Vector2>();
@@ -58,7 +64,6 @@ public class PlayerMovement : MonoBehaviour
 
     public void OnSprint(InputAction.CallbackContext context)
     {
-        // Pojistka, kdyby stats chyběly
         if (stats == null) return;
 
         if (context.performed)
@@ -77,51 +82,85 @@ public class PlayerMovement : MonoBehaviour
 
     void Update()
     {
-        if (!isDashing)
+        if (isDashing) return;
+
+        // 1. Získáme pozici myši ve světě
+        Vector3 mouseScreenPos = Mouse.current.position.ReadValue();
+        Vector3 mouseWorldPos = mainCamera.ScreenToWorldPoint(mouseScreenPos);
+
+        // Vektor směru od hráče k myši (Normalized = délka 1)
+        Vector2 lookDir = (mouseWorldPos - transform.position).normalized;
+
+        // ---------------------------------------------------------
+        // TOTO JE TA ČÁST, KTEROU JSME ZAKOMENTOVALI (FYZICKÁ ROTACE)
+        // Protože používáme 4-směrové animace, nesmíme točit objektem.
+        /*
+        Vector3 direction = mouseWorldPos - transform.position;
+        float angle = Mathf.Atan2(direction.y, direction.x) * Mathf.Rad2Deg - 90f;
+        transform.rotation = Quaternion.Euler(new Vector3(0, 0, angle));
+        */
+        // ---------------------------------------------------------
+
+        // --- OVLÁDÁNÍ ANIMÁTORU ---
+        if (anim != null)
         {
-            // Rotace za myší
-            Vector3 mouseWorldPosition = mainCamera.ScreenToWorldPoint(mousePosition);
-            Vector3 direction = mouseWorldPosition - transform.position;
-            float angle = Mathf.Atan2(direction.y, direction.x) * Mathf.Rad2Deg - 90f;
-            transform.rotation = Quaternion.Euler(new Vector3(0, 0, angle));
+            // A. Rychlost (Speed)
+            // Určuje, jestli hrajeme animaci "Idle" nebo "Movement".
+            // Používáme movementInput (WASD), abychom věděli, jestli se hýbeme.
+            float moveAmount = movementInput.magnitude;
+
+            // Pokud se hýbeme, pošleme tam aktuální rychlost (aby se případně přeplo na běh)
+            // Pokud stojíme, pošleme 0.
+            if (moveAmount > 0)
+            {
+                anim.SetFloat("Speed", currentSpeed > 0 ? currentSpeed : 1f);
+            }
+            else
+            {
+                anim.SetFloat("Speed", 0f);
+            }
+
+            // B. Směr (Horizontal, Vertical)
+            // DŮLEŽITÉ: Posíláme tam směr K MYŠI (lookDir), ne směr chůze!
+            // Díky tomu budeš moci couvat a střílet na nepřítele (Strafing).
+
+            anim.SetFloat("Horizontal", lookDir.x);
+            anim.SetFloat("Vertical", lookDir.y);
+
+            // C. Paměť (LastHorizontal, LastVertical)
+            // Ukládáme, kam jsme koukali naposledy, aby Idle animace zůstala otočená správně.
+            anim.SetFloat("LastHorizontal", lookDir.x);
+            anim.SetFloat("LastVertical", lookDir.y);
         }
     }
 
     void FixedUpdate()
     {
         if (isDashing) return;
-        if (stats == null) return;
 
-        // Logika pro Sprint (stejná jako předtím)
-        float targetSprintSpeed = stats.movementSpeed * sprintSpeedMultiplier;
-        if (currentSpeed < targetSprintSpeed && currentSpeed != stats.movementSpeed)
-        {
-            currentSpeed = stats.movementSpeed;
-        }
-        if (currentSpeed == 0) currentSpeed = stats.movementSpeed;
+        // Pohyb zůstává podle klávesnice (WASD)
+        // Bez ohledu na to, kam koukáme
+        float targetSprintSpeed = (stats != null) ? stats.movementSpeed * sprintSpeedMultiplier : 5f;
 
-        // ZMĚNA: Aplikujeme slowMultiplier do finálního výpočtu
+        if (currentSpeed < targetSprintSpeed && currentSpeed != (stats ? stats.movementSpeed : 5f))
+            currentSpeed = (stats ? stats.movementSpeed : 5f);
+
+        if (currentSpeed == 0) currentSpeed = (stats ? stats.movementSpeed : 5f);
+
         Vector2 targetVelocity = movementInput * currentSpeed * slowMultiplier;
-
         rb.linearVelocity = targetVelocity;
     }
 
     public void ApplySlow(float duration, float slowAmount)
     {
-        // Spustíme Coroutinu, která hráče zpomalí a pak vrátí rychlost zpět
         StartCoroutine(SlowRoutine(duration, slowAmount));
     }
 
     IEnumerator SlowRoutine(float duration, float slowAmount)
     {
-        // slowAmount 0.5 znamená 50% rychlost
         slowMultiplier = slowAmount;
-        // Debug.Log("Hráč je zpomalen!");
-
         yield return new WaitForSeconds(duration);
-
-        slowMultiplier = 1f; // Návrat k normálu
-        // Debug.Log("Hráč už není zpomalen.");
+        slowMultiplier = 1f;
     }
 
     IEnumerator PerformDash()
@@ -130,7 +169,10 @@ public class PlayerMovement : MonoBehaviour
         canDash = false;
 
         Vector2 dashDirection = movementInput.normalized;
-        if (dashDirection == Vector2.zero) dashDirection = transform.up; // Fallback na směr pohledu
+        if (dashDirection == Vector2.zero) dashDirection = transform.up;
+        // Pozor: Pokud jsme vypnuli rotaci transformu, transform.up bude vždy nahoru.
+        // Lepší je použít poslední uložený směr z Animátoru, nebo default (0,1).
+        if (dashDirection == Vector2.zero) dashDirection = new Vector2(0, 1);
 
         Vector2 startPosition = rb.position;
         Vector2 endPosition = startPosition + dashDirection * dashDistance;

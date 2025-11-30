@@ -5,31 +5,35 @@ using UnityEngine.InputSystem;
 public class SwordAttack : MonoBehaviour
 {
     [Header("Attack Settings")]
-    public float attackRange = 2.5f;
-    public float attackAngle = 120f;
-    public float attackDuration = 0.2f;
+    public float baseAttackRange = 1.5f;
+    public float attackAngle = 100f;
+
+    [Header("Timing & Speed")]
+    public float baseAttackDuration = 0.3f; // Jak dlouho trvá švihnutí (pøi speed 1)
+    public float attackCooldown = 0.5f;     // Pevnı èas mezi útoky (nebo se mùe zkracovat speedem)
+    public float attackSpeed = 1.0f;        // Multiplikátor rychlosti (napø. ze statistik)
 
     [Header("Weapon Stats")]
-    public int weaponDamage = 10;       // Základní poškození meèe
-    public float damageMultiplier = 1f; // Pøípadnı bonus (1.0 = 100%)
+    public int weaponDamage = 20;
+    public float damageMultiplier = 1f;
 
     [Header("Layers")]
     public LayerMask enemyLayers;
     public LayerMask obstacleLayers;
 
     private bool isAttacking = false;
+    private float nextAttackTime = 0f;
     private Quaternion defaultRotation;
 
     void Start()
     {
-        // Uloíme si startovní rotaci SwordHolderu
         defaultRotation = transform.localRotation;
     }
 
-    // Voláno z WeaponManageru
     public void OnAttack(InputAction.CallbackContext context)
     {
-        if (context.performed && !isAttacking)
+        // Útoèíme jen, pokud u neútoèíme A uplynul èas cooldownu
+        if (context.performed && !isAttacking && Time.time >= nextAttackTime)
         {
             StartCoroutine(PerformAttack());
         }
@@ -39,69 +43,92 @@ public class SwordAttack : MonoBehaviour
     {
         isAttacking = true;
 
-        // 1. Zpùsobit poškození
-        DealConeDamage();
-
-        // 2. Animace (Otáèíme SwordHolderem)
-        float timer = 0f;
-
-        // Vypoèítáme úhly rotace
-        Quaternion startRot = Quaternion.Euler(0, 0, attackAngle / 2f);
-        Quaternion endRot = Quaternion.Euler(0, 0, -attackAngle / 2f);
-
-        while (timer < attackDuration)
+        // Spustíme animaci na hráèi (Trigger)
+        Animator playerAnim = GetComponentInParent<Animator>();
+        if (playerAnim != null)
         {
-            transform.localRotation = Quaternion.Lerp(defaultRotation * startRot, defaultRotation * endRot, timer / attackDuration);
-            timer += Time.deltaTime;
-            yield return null;
+            // Mùeme poslat i rychlost animace do animátoru
+            playerAnim.SetFloat("AttackSpeed", attackSpeed);
+            playerAnim.SetTrigger("Attack");
         }
 
-        transform.localRotation = defaultRotation;
+        // Aktualizujeme pozici hitboxu podle smìru pohledu hráèe
+        UpdateAttackPointPosition(playerAnim);
+
+        // Vıpoèet trvání útoku podle rychlosti (èím vyšší speed, tím kratší duration)
+        float currentDuration = baseAttackDuration / attackSpeed;
+
+        // Nastavení dalšího útoku (Cooldown)
+        // Monost A: Pevnı cooldown (napø. 0.5s)
+        // nextAttackTime = Time.time + attackCooldown;
+
+        // Monost B: Cooldown se zkracuje s rychlostí útoku (vhodné pro RPG)
+        float currentCooldown = attackCooldown / attackSpeed;
+        nextAttackTime = Time.time + currentCooldown;
+
+        // Èekání na "zásah" (napø. v polovinì švihu)
+        yield return new WaitForSeconds(currentDuration * 0.3f);
+
+        // Udìlení poškození
+        DealConeDamage();
+
+        // Èekání na zbytek animace
+        yield return new WaitForSeconds(currentDuration * 0.7f);
+
+        // Reset
+        // Pokud otáèíš meèem manuálnì (bez animátoru), resetuj rotaci zde
+        // transform.localRotation = defaultRotation; 
+
         isAttacking = false;
     }
 
     void DealConeDamage()
     {
-        // Získáme reference na statistiky hráèe (pro vıpoèet síly)
-        // SwordHolder je dítì Player objektu, proto GetComponentInParent
-        PlayerStats stats = GetComponentInParent<PlayerStats>();
+        // ... (Stejná logika jako pøedtím) ...
 
-        // Vıpoèet finálního poškození (Staty hráèe + Staty zbranì)
-        int finalDamage = (stats != null) ? stats.GetTotalDamage(weaponDamage, damageMultiplier) : weaponDamage;
+        // 1. Zjistíme støed útoku (posunutı pøed hráèe)
+        // Získáme smìr pohledu z Animátoru nebo Transformu
+        Vector2 facingDir = transform.parent.up; // Defaultnì nahoru, pokud se hráè netoèí
 
-        // Poèítáme útok ze støedu HRÁÈE (Rodièe), ne ze støedu meèe.
-        Vector3 origin = transform.parent.position;
+        // Pokud máš v animátoru LastHorizontal/Vertical, pouij je:
+        Animator anim = GetComponentInParent<Animator>();
+        if (anim != null)
+        {
+            facingDir = new Vector2(anim.GetFloat("LastHorizontal"), anim.GetFloat("LastVertical")).normalized;
+            if (facingDir == Vector2.zero) facingDir = new Vector2(0, -1); // Fallback dolù
+        }
 
-        // Hledáme v kruhu kolem hráèe
-        Collider2D[] hits = Physics2D.OverlapCircleAll(origin, attackRange, enemyLayers);
+        Vector3 attackCenter = transform.parent.position + (Vector3)facingDir * 0.5f; // Posuneme kruh
+
+        Collider2D[] hits = Physics2D.OverlapCircleAll(attackCenter, baseAttackRange, enemyLayers);
 
         foreach (Collider2D hit in hits)
         {
-            Vector2 directionToEnemy = (hit.transform.position - origin).normalized;
+            // Raycast pro kontrolu zdí
+            Vector2 dirToEnemy = (hit.transform.position - transform.parent.position).normalized;
+            float dist = Vector2.Distance(transform.parent.position, hit.transform.position);
 
-            // Smìr, kterım se dívá hráè (zajišuje, e útoèíme pøed sebe)
-            Vector2 playerFacingDirection = transform.parent.up;
-
-            float angleToEnemy = Vector2.Angle(playerFacingDirection, directionToEnemy);
-
-            // Je nepøítel v naší vıseèi?
-            if (angleToEnemy < attackAngle / 2f)
+            if (!Physics2D.Raycast(transform.parent.position, dirToEnemy, dist, obstacleLayers))
             {
-                float dist = Vector2.Distance(origin, hit.transform.position);
-
-                // Raycast pro kontrolu zdí (aby nešlo sekat skrz zeï)
-                RaycastHit2D ray = Physics2D.Raycast(origin, directionToEnemy, dist, obstacleLayers);
-
-                if (ray.collider == null)
+                // Aplikace damage
+                EnemyStats eStats = hit.GetComponent<EnemyStats>();
+                if (eStats != null)
                 {
-                    // ZMÌNA: Hledáme EnemyStats místo EnemyHealth
-                    EnemyStats eStats = hit.GetComponent<EnemyStats>();
-                    if (eStats != null)
-                    {
-                        eStats.TakeDamage(finalDamage);
-                    }
+                    int totalDamage = Mathf.RoundToInt(weaponDamage * damageMultiplier);
+                    eStats.TakeDamage(totalDamage);
                 }
             }
+        }
+    }
+
+    void UpdateAttackPointPosition(Animator anim)
+    {
+        // Pokud pouíváš vizuální AttackPoint pro Debug, posuò ho
+        if (anim != null)
+        {
+            float x = anim.GetFloat("LastHorizontal");
+            float y = anim.GetFloat("LastVertical");
+            transform.localPosition = new Vector3(x, y, 0).normalized * 0.5f;
         }
     }
 
@@ -109,9 +136,9 @@ public class SwordAttack : MonoBehaviour
     {
         if (transform.parent != null)
         {
-            Vector3 origin = transform.parent.position;
-            Gizmos.color = Color.yellow;
-            Gizmos.DrawWireSphere(origin, attackRange);
+            Gizmos.color = Color.red;
+            // Vykreslíme kruh tam, kde by byl pøi útoku (zhruba)
+            Gizmos.DrawWireSphere(transform.position, baseAttackRange);
         }
     }
 }
