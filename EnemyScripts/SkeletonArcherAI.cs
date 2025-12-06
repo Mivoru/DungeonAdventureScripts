@@ -19,12 +19,10 @@ public class SkeletonArcherAI : MonoBehaviour
 
     [Header("Combat Settings")]
     public float idealRange = 6f;
-    public float meleeRange = 1.5f;
     public float fleeDistance = 3f;
 
     [Header("Cooldowns")]
     public float shootCooldown = 2f;
-    public float meleeCooldown = 1.5f;
     public float evadeCooldown = 3f;
 
     [Header("Weapon (Bow)")]
@@ -33,15 +31,12 @@ public class SkeletonArcherAI : MonoBehaviour
     public float arrowSpeed = 15f;
     public int bowDamage = 10;
 
-    [Header("Weapon (Dagger)")]
-    public int daggerDamage = 5;
-
     [Header("Layers")]
     public LayerMask projectileLayer;
     public LayerMask playerLayer;
 
     // --- STAVY ---
-    private enum State { Patrol, Chase, Shoot, Melee, Evade, Search, Flee }
+    private enum State { Patrol, Chase, Shoot, Evade, Search, Flee }
     private State currentState = State.Patrol;
 
     private NavMeshAgent agent;
@@ -51,7 +46,6 @@ public class SkeletonArcherAI : MonoBehaviour
     private Vector3 lastKnownPosition;
 
     private float nextShootTime;
-    private float nextMeleeTime;
     private float nextEvadeTime;
     private float patrolTimer;
     private float searchTimer;
@@ -108,9 +102,6 @@ public class SkeletonArcherAI : MonoBehaviour
             case State.Shoot:
                 ShootLogic(distToPlayer, canSeePlayer);
                 break;
-            case State.Melee:
-                MeleeLogic(distToPlayer); // Opraveno: jen jeden argument
-                break;
             case State.Flee:
                 FleeLogic(distToPlayer);
                 break;
@@ -159,8 +150,7 @@ public class SkeletonArcherAI : MonoBehaviour
         {
             lastKnownPosition = player.position;
 
-            if (dist <= meleeRange) currentState = State.Melee;
-            else if (dist < fleeDistance) currentState = State.Flee;
+            if (dist < fleeDistance) currentState = State.Flee;
             else if (dist <= idealRange) currentState = State.Shoot;
             else agent.SetDestination(player.position);
         }
@@ -176,27 +166,12 @@ public class SkeletonArcherAI : MonoBehaviour
         agent.velocity = Vector2.zero;
 
         if (!see || dist > idealRange * 1.2f) { currentState = State.Chase; agent.isStopped = false; return; }
-        if (dist <= meleeRange) { currentState = State.Melee; agent.isStopped = false; return; }
         if (dist < fleeDistance) { currentState = State.Flee; agent.isStopped = false; return; }
 
         if (Time.time >= nextShootTime)
         {
             StartCoroutine(ShootRoutine());
             nextShootTime = Time.time + shootCooldown;
-        }
-    }
-
-    void MeleeLogic(float dist)
-    {
-        agent.isStopped = true;
-        agent.velocity = Vector2.zero;
-
-        if (dist > meleeRange * 1.5f) { currentState = State.Chase; agent.isStopped = false; return; }
-
-        if (Time.time >= nextMeleeTime)
-        {
-            StartCoroutine(MeleeRoutine());
-            nextMeleeTime = Time.time + meleeCooldown;
         }
     }
 
@@ -263,48 +238,74 @@ public class SkeletonArcherAI : MonoBehaviour
         isActionInProgress = false;
     }
 
-    IEnumerator MeleeRoutine()
-    {
-        isActionInProgress = true;
-        anim.SetTrigger("Melee");
-        yield return new WaitForSeconds(0.3f); // Časování zásahu
-
-        // Útok dýkou (kruh) - s posunem vpřed
-        float facingDir = Mathf.Sign(transform.localScale.x);
-        Vector3 attackPos = transform.position + new Vector3(facingDir * 0.5f, 0, 0);
-
-        Collider2D hit = Physics2D.OverlapCircle(attackPos, meleeRange, playerLayer);
-        if (hit != null) hit.GetComponent<PlayerStats>()?.TakeDamage(daggerDamage);
-
-        yield return new WaitForSeconds(0.5f); // Dojezd animace
-        isActionInProgress = false;
-    }
-
     IEnumerator PerformEvasion()
     {
         isActionInProgress = true;
-        isEvading = true; // Imunita
+        isEvading = true; // Imunita zapnuta
 
         anim.SetTrigger("Evade");
 
-        // Náhodný směr úskoku
-        Vector3 evadeDir = transform.right * (UnityEngine.Random.value > 0.5f ? 1 : -1);
-        if (Physics2D.Raycast(transform.position, evadeDir, 2f, obstacleLayer)) evadeDir = -transform.up;
+        // 1. ZJISTÍME SMĚR ÚSKOKU (Podle trajektorie šípu)
+        Vector3 dodgeDirection;
 
-        Vector3 targetPos = transform.position + evadeDir * 3f;
+        // Najdeme nejbližší šíp
+        Collider2D arrow = Physics2D.OverlapCircle(transform.position, 6f, projectileLayer);
 
-        agent.speed = runSpeed * 3f; // Turbo
-        agent.SetDestination(targetPos);
+        if (arrow != null && arrow.attachedRigidbody != null)
+        {
+            // Získáme směr letu šípu
+            Vector2 arrowVelocity = arrow.attachedRigidbody.linearVelocity; // (V Unity 6)
+            // Pokud máš starší Unity, použij: arrow.attachedRigidbody.velocity;
 
-        yield return new WaitForSeconds(0.5f);
+            if (arrowVelocity != Vector2.zero)
+            {
+                // Vypočítáme kolmici (Normalu) k letu šípu = Úskok do boku
+                // Kolmice k (x, y) je (-y, x)
+                dodgeDirection = new Vector3(-arrowVelocity.y, arrowVelocity.x, 0).normalized;
+            }
+            else
+            {
+                // Záloha: Kolmo k hráči
+                Vector3 dirToPlayer = (player.position - transform.position).normalized;
+                dodgeDirection = new Vector3(-dirToPlayer.y, dirToPlayer.x, 0);
+            }
+        }
+        else
+        {
+            // Záloha: Náhodně do boku
+            dodgeDirection = transform.right;
+        }
 
-        agent.speed = runSpeed;
+        // Náhodně doleva nebo doprava (50/50)
+        if (UnityEngine.Random.value > 0.5f) dodgeDirection = -dodgeDirection;
+
+        // 2. MANUÁLNÍ POHYB (DASH)
+        // Místo SetDestination použijeme Move(), který neřeší pathfinding, jen kolize.
+
+        agent.isStopped = true; // Vypneme automatický pohyb
+        agent.ResetPath();
+
+        float dashDuration = 0.4f; // Jak dlouho skáče
+        float dashSpeed = 12f;     // Jak rychle skáče (hodně!)
+        float timer = 0f;
+
+        while (timer < dashDuration)
+        {
+            // Pohneme agentem manuálně o kousek v každém snímku
+            // agent.Move respektuje zdi (neprojde skrz), ale nesnaží se hledat cestu
+            agent.Move(dodgeDirection * dashSpeed * Time.deltaTime);
+
+            timer += Time.deltaTime;
+            yield return null; // Počkáme na další snímek
+        }
+
+        // 3. KONEC
+        agent.isStopped = false; // Zapneme zpět mozek
         nextEvadeTime = Time.time + evadeCooldown;
 
         isActionInProgress = false;
-        isEvading = false; // Konec imunity
+        isEvading = false; // Vypneme imunitu
     }
-
     // --- PUBLIC METODY (ANIMATION EVENTS & STATS) ---
 
     // Tuto metodu volá Animation Event v animaci Shot1_Archer

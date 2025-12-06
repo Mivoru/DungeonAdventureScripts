@@ -126,6 +126,12 @@ public class EnemyStats : CharacterStats
 
     public override void TakeDamage(int damage)
     {
+        GiantAI giant = GetComponent<GiantAI>();
+        if (giant != null && giant.IsInvulnerable())
+        {
+            Debug.Log(" GIANT JE NEZRANITELNÝ!");
+            return;
+        }
         SkeletonArcherAI archerAI = GetComponent<SkeletonArcherAI>();
         if (archerAI != null && archerAI.IsEvading()) return;
 
@@ -185,8 +191,16 @@ public class EnemyStats : CharacterStats
     void DropLoot()
     {
         if (lootPrefab == null || lootTable == null) return;
+
+        // Získáme hráèovo štìstí
+        float playerLuck = 1.0f;
+        if (PlayerStats.instance != null) playerLuck = PlayerStats.instance.luck;
+
         foreach (LootEntry entry in lootTable)
         {
+            // ZMÌNA: Násobíme šanci štìstím
+            // (Napø. 10% šance * 1.5 Luck = 15% šance)
+            float chance = entry.dropChance * playerLuck;
             if (UnityEngine.Random.Range(0f, 100f) <= entry.dropChance)
             {
                 Vector3 spawnPos = transform.position + (Vector3)UnityEngine.Random.insideUnitCircle * scatterRadius;

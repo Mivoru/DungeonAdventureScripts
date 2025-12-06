@@ -40,6 +40,12 @@ public class DungeonGenerator : MonoBehaviour
     [Header("Spawn Room (Start)")]
     public Vector2Int spawnRoomSize = new Vector2Int(10, 10); // Fixní velikost 10x10
 
+    [Header("Boss Room Setup")]
+    public GameObject bossRoomControllerPrefab;
+
+    [Header("Exits")]
+    public GameObject portalPrefab;
+
     // --- SKUPINY NEPØÁTEL ---
     [System.Serializable]
     public class EnemyGroup
@@ -105,7 +111,33 @@ public class DungeonGenerator : MonoBehaviour
 
     void Start()
     {
+        // 1. Zkusíme najít Šéfa (GameManager)
+        if (GameManager.instance != null && GameManager.instance.currentLevelData != null)
+        {
+            Debug.Log("Naèítám data z GameManageru...");
+            LoadData(GameManager.instance.currentLevelData);
+        }
+        else
+        {
+            Debug.LogWarning("Hraju jen testovací scénu (bez GameManageru). Používám nastavení z Inspectoru.");
+        }
+
+        // 2. Zaèneme stavìt
         GenerateDungeon();
+    }
+
+    void LoadData(DungeonLevelData data)
+    {
+        // Pøepíšeme nastavení generátoru hodnotami z Dat
+        minRoomSize = data.minMaxRoomSize.x;
+        maxRoomSize = data.minMaxRoomSize.y;
+        numberOfRooms = data.numberOfRooms;
+
+        enemyGroups = data.enemyGroups;
+        soloEnemiesToSpawn = data.soloEnemies;
+        totalGroupsToSpawn = data.totalGroups;
+
+        bossLevel = data.bossLevel;
     }
 
     void GenerateDungeon()
@@ -241,15 +273,25 @@ public class DungeonGenerator : MonoBehaviour
     void CreateBossRoom()
     {
         if (rooms.Count == 0) return;
+
+        // 1. Najdeme místo pro Boss Room (nejdál od startu)
         Room furthestRoom = rooms.OrderByDescending(r => Vector3.Distance(Vector3.zero, r.center)).First();
+
+        // --- DÙLEŽITÁ OPRAVA: SMAŽEME TU STAROU MÍSTNOST ---
+        // Aby ji generátor nepøátel už nevidìl a nespawnoval do ní moby.
+        rooms.Remove(furthestRoom);
 
         int w = bossRoomSize.x;
         int h = bossRoomSize.y;
         Vector3Int center = furthestRoom.center;
+
+        // 2. Vytvoøíme obdélník Boss místnosti
         RectInt bossRect = new RectInt(center.x - w / 2, center.y - h / 2, w, h);
 
+        // 3. Pøidáme Boss Room do seznamu (teï bude opravdu poslední)
         rooms.Add(new Room { bounds = bossRect });
 
+        // 4. Vykreslíme podlahu
         for (int x = bossRect.x; x < bossRect.xMax; x++)
         {
             for (int y = bossRect.y; y < bossRect.yMax; y++)
@@ -257,8 +299,20 @@ public class DungeonGenerator : MonoBehaviour
                 Ground.SetTile(new Vector3Int(x, y, 0), FloorTile);
             }
         }
-    }
 
+        // 5. Vypoèítáme støed pro spawn manageru
+        Vector3 bossRoomCenter = new Vector3(bossRect.center.x, bossRect.center.y, 0);
+
+        // 6. SPAWN MANAGERU (Místo portálu)
+        if (bossRoomControllerPrefab != null)
+        {
+            Instantiate(bossRoomControllerPrefab, bossRoomCenter, Quaternion.identity);
+        }
+        else
+        {
+            Debug.LogWarning("Chybí BossRoomControllerPrefab v Inspectoru DungeonGeneratoru!");
+        }
+    }
     // --- OPRAVY TERÉNU A ZDI ---
 
     void CreateWalls()
@@ -500,7 +554,7 @@ public class DungeonGenerator : MonoBehaviour
         while (spawnedGroups < totalGroupsToSpawn && attempts < 1000)
         {
             attempts++;
-            Room r = rooms[UnityEngine.Random.Range(1, rooms.Count)];
+            Room r = rooms[UnityEngine.Random.Range(1, rooms.Count - 1)];
             if (Vector3.Distance(Vector3.zero, r.center) < safeZoneRadius) continue;
             if (r.hasEnemies) continue;
             if (enemyGroups.Count == 0) break;
@@ -534,7 +588,7 @@ public class DungeonGenerator : MonoBehaviour
             while (spawnedCount < config.count && attempts < 1000)
             {
                 attempts++;
-                Room r = rooms[UnityEngine.Random.Range(1, rooms.Count)];
+                Room r = rooms[UnityEngine.Random.Range(1, rooms.Count - 1)];
                 if (Vector3.Distance(Vector3.zero, r.center) < safeZoneRadius) continue;
                 float randomX = UnityEngine.Random.Range(r.bounds.xMin + 2, r.bounds.xMax - 2);
                 float randomY = UnityEngine.Random.Range(r.bounds.yMin + 2, r.bounds.yMax - 2);

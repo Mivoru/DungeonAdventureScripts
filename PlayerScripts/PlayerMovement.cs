@@ -84,11 +84,17 @@ public class PlayerMovement : MonoBehaviour
     {
         if (isDashing) return;
 
-        // 1. Získáme pozici myši ve světě
-        Vector3 mouseScreenPos = Mouse.current.position.ReadValue();
-        Vector3 mouseWorldPos = mainCamera.ScreenToWorldPoint(mouseScreenPos);
+        // --- OPRAVA KAMERY ---
+        if (mainCamera == null)
+        {
+            mainCamera = Camera.main; // Zkusíme najít novou kameru
+            if (mainCamera == null) return; // Pokud stále není, počkáme
+        }
 
-        // Vektor směru od hráče k myši (Normalized = délka 1)
+        // 1. Výpočet směru pohledu
+        Vector3 mouseScreenPos = Mouse.current.position.ReadValue();
+        Vector3 mouseWorldPos = mainCamera.ScreenToWorldPoint(mouseScreenPos); // Tady to padalo
+
         Vector2 lookDir = (mouseWorldPos - transform.position).normalized;
 
         // ---------------------------------------------------------
@@ -189,7 +195,11 @@ public class PlayerMovement : MonoBehaviour
         rb.linearVelocity = Vector2.zero;
         isDashing = false;
 
-        yield return new WaitForSeconds(dashCooldown);
+        
+        float reduction = (stats != null) ? stats.dashCooldownRed : 0f;
+        float finalCooldown = Mathf.Max(0.2f, dashCooldown - reduction); // Min 0.2s
+
+        yield return new WaitForSeconds(finalCooldown);
         canDash = true;
     }
 }

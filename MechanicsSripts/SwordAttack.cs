@@ -5,13 +5,12 @@ using UnityEngine.InputSystem;
 public class SwordAttack : MonoBehaviour
 {
     [Header("Attack Settings")]
-    public float baseAttackRange = 1.5f;
-    public float attackAngle = 100f;
+    public float attackRange = 1.5f;  // Dosah útoku
+    public float attackAngle = 100f;  // Úhel výseèe
 
-    [Header("Timing & Speed")]
-    public float baseAttackDuration = 0.3f; // Jak dlouho trvá švihnutí (pøi speed 1)
-    public float attackCooldown = 0.5f;     // Pevný èas mezi útoky (nebo se mùže zkracovat speedem)
-    public float attackSpeed = 1.0f;        // Multiplikátor rychlosti (napø. ze statistik)
+    [Header("Timing")]
+    public float baseAttackDuration = 0.3f; // Základní délka animace
+    public float attackCooldown = 0.5f;     // Základní èas mezi útoky
 
     [Header("Weapon Stats")]
     public int weaponDamage = 20;
@@ -30,9 +29,9 @@ public class SwordAttack : MonoBehaviour
         defaultRotation = transform.localRotation;
     }
 
+    // Voláno z WeaponManageru
     public void OnAttack(InputAction.CallbackContext context)
     {
-        // Útoèíme jen, pokud už neútoèíme A uplynul èas cooldownu
         if (context.performed && !isAttacking && Time.time >= nextAttackTime)
         {
             StartCoroutine(PerformAttack());
@@ -43,79 +42,85 @@ public class SwordAttack : MonoBehaviour
     {
         isAttacking = true;
 
-        // Spustíme animaci na hráèi (Trigger)
+        // 1. Získání rychlosti útoku (z PlayerStats nebo základní 1.0)
+        float currentAttackSpeed = 1.0f;
+        PlayerStats stats = GetComponentInParent<PlayerStats>();
+        if (stats != null)
+        {
+            currentAttackSpeed = stats.attackSpeed;
+        }
+
+        // 2. Spuštìní animace
         Animator playerAnim = GetComponentInParent<Animator>();
         if (playerAnim != null)
         {
-            // Mùžeme poslat i rychlost animace do animátoru
-            playerAnim.SetFloat("AttackSpeed", attackSpeed);
+            // Mùžeme poslat rychlost do animátoru (pokud máš parametr AttackSpeed)
+            playerAnim.SetFloat("AttackSpeed", currentAttackSpeed);
             playerAnim.SetTrigger("Attack");
         }
 
-        // Aktualizujeme pozici hitboxu podle smìru pohledu hráèe
+        // 3. Aktualizace pozice hitboxu (podle toho kam koukáme)
         UpdateAttackPointPosition(playerAnim);
 
-        // Výpoèet trvání útoku podle rychlosti (èím vyšší speed, tím kratší duration)
-        float currentDuration = baseAttackDuration / attackSpeed;
+        // Výpoèet trvání (rychlejší útok = kratší èas)
+        float duration = baseAttackDuration / currentAttackSpeed;
 
-        // Nastavení dalšího útoku (Cooldown)
-        // Možnost A: Pevný cooldown (napø. 0.5s)
-        // nextAttackTime = Time.time + attackCooldown;
+        // Nastavení cooldownu
+        float cooldown = attackCooldown / currentAttackSpeed;
+        nextAttackTime = Time.time + cooldown;
 
-        // Možnost B: Cooldown se zkracuje s rychlostí útoku (vhodné pro RPG)
-        float currentCooldown = attackCooldown / attackSpeed;
-        nextAttackTime = Time.time + currentCooldown;
+        // Èekání na "zásah" (v cca 30% animace)
+        yield return new WaitForSeconds(duration * 0.3f);
 
-        // Èekání na "zásah" (napø. v polovinì švihu)
-        yield return new WaitForSeconds(currentDuration * 0.3f);
-
-        // Udìlení poškození
+        // 4. Udìlení poškození
         DealConeDamage();
 
-        // Èekání na zbytek animace
-        yield return new WaitForSeconds(currentDuration * 0.7f);
-
-        // Reset
-        // Pokud otáèíš meèem manuálnì (bez animátoru), resetuj rotaci zde
-        // transform.localRotation = defaultRotation; 
+        // Zbytek animace
+        yield return new WaitForSeconds(duration * 0.7f);
 
         isAttacking = false;
     }
 
     void DealConeDamage()
     {
-        // ... (Stejná logika jako pøedtím) ...
+        // A) Výpoèet poškození
+        PlayerStats stats = GetComponentInParent<PlayerStats>();
+        int finalDamage = (stats != null) ? stats.GetCalculatedDamage(weaponDamage) : weaponDamage;
 
-        // 1. Zjistíme støed útoku (posunutý pøed hráèe)
-        // Získáme smìr pohledu z Animátoru nebo Transformu
-        Vector2 facingDir = transform.parent.up; // Defaultnì nahoru, pokud se hráè netoèí
+        // B) Zjištìní smìru (z Animátoru, protože transform se netoèí)
+        Vector2 facingDir = Vector2.down;
 
-        // Pokud máš v animátoru LastHorizontal/Vertical, použij je:
         Animator anim = GetComponentInParent<Animator>();
         if (anim != null)
         {
-            facingDir = new Vector2(anim.GetFloat("LastHorizontal"), anim.GetFloat("LastVertical")).normalized;
-            if (facingDir == Vector2.zero) facingDir = new Vector2(0, -1); // Fallback dolù
+            facingDir = new Vector2(anim.GetFloat("LastHorizontal"), anim.GetFloat("LastVertical"));
+            if (facingDir.sqrMagnitude > 0.01f) facingDir.Normalize();
+            else facingDir = Vector2.down;
         }
 
-        Vector3 attackCenter = transform.parent.position + (Vector3)facingDir * 0.5f; // Posuneme kruh
+        // C) Støed útoku
+        Vector3 attackCenter = transform.parent.position + (Vector3)facingDir * 0.5f;
 
-        Collider2D[] hits = Physics2D.OverlapCircleAll(attackCenter, baseAttackRange, enemyLayers);
+        // D) Detekce a Zásah
+        Collider2D[] hits = Physics2D.OverlapCircleAll(attackCenter, attackRange, enemyLayers);
 
         foreach (Collider2D hit in hits)
         {
-            // Raycast pro kontrolu zdí
             Vector2 dirToEnemy = (hit.transform.position - transform.parent.position).normalized;
             float dist = Vector2.Distance(transform.parent.position, hit.transform.position);
 
-            if (!Physics2D.Raycast(transform.parent.position, dirToEnemy, dist, obstacleLayers))
+            // Úhel
+            if (Vector2.Angle(facingDir, dirToEnemy) < attackAngle / 2f)
             {
-                // Aplikace damage
-                EnemyStats eStats = hit.GetComponent<EnemyStats>();
-                if (eStats != null)
+                // Zeï (Raycast)
+                if (!Physics2D.Raycast(transform.parent.position, dirToEnemy, dist, obstacleLayers))
                 {
-                    int totalDamage = Mathf.RoundToInt(weaponDamage * damageMultiplier);
-                    eStats.TakeDamage(totalDamage);
+                    // Zranìní
+                    EnemyStats eStats = hit.GetComponent<EnemyStats>();
+                    if (eStats != null)
+                    {
+                        eStats.TakeDamage(finalDamage);
+                    }
                 }
             }
         }
@@ -123,11 +128,11 @@ public class SwordAttack : MonoBehaviour
 
     void UpdateAttackPointPosition(Animator anim)
     {
-        // Pokud používáš vizuální AttackPoint pro Debug, posuò ho
         if (anim != null)
         {
             float x = anim.GetFloat("LastHorizontal");
             float y = anim.GetFloat("LastVertical");
+            // Posuneme tento objekt (SwordHolder) trochu ve smìru pohledu pro lepší debug
             transform.localPosition = new Vector3(x, y, 0).normalized * 0.5f;
         }
     }
@@ -137,8 +142,7 @@ public class SwordAttack : MonoBehaviour
         if (transform.parent != null)
         {
             Gizmos.color = Color.red;
-            // Vykreslíme kruh tam, kde by byl pøi útoku (zhruba)
-            Gizmos.DrawWireSphere(transform.position, baseAttackRange);
+            Gizmos.DrawWireSphere(transform.position, attackRange);
         }
     }
 }

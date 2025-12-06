@@ -31,25 +31,36 @@ public class PlayerInteraction : MonoBehaviour
         // 1. Test tlaèítka
         if (context.performed)
         {
-            Debug.Log(" Tlaèítko E stisknuto! Volám fyziku...");
+            // Debug.Log(" Tlaèítko E stisknuto!");
 
-            // 2. Test fyziky
-            Collider2D[] loots = Physics2D.OverlapCircleAll(transform.position, pickupRange, lootLayer);
-            Debug.Log($" Poèet nalezených objektù: {loots.Length}");
+            // 2. Test fyziky - Hledáme VŠE v dosahu (bez filtru vrstvy, aby to našlo i Portál)
+            Collider2D[] hits = Physics2D.OverlapCircleAll(transform.position, pickupRange);
 
-            foreach (Collider2D col in loots)
+            foreach (Collider2D hit in hits)
             {
-                Debug.Log($"   - Vidím objekt: {col.name}");
-                LootPickup item = col.GetComponent<LootPickup>();
+                // A. Zkusíme najít LOOT
+                LootPickup item = hit.GetComponent<LootPickup>();
                 if (item != null && item.canBePickedUp)
                 {
-                    Debug.Log("   -> Sbírám!");
+                    // Debug.Log(" -> Sbírám loot!");
                     item.Collect();
-                    break;
+                    return; // Sebrali jsme, konèíme (nepokraèujeme k portálu)
                 }
-                else
+
+                // B. Zkusíme najít PORTÁL
+                VillagePortal portal = hit.GetComponent<VillagePortal>();
+                if (portal != null)
                 {
-                    Debug.Log($"   -> Nemùžu sebrat (Item: {item != null}, CanPickup: {item?.canBePickedUp})");
+                    // Debug.Log(" -> Aktivuji portál!");
+                    portal.Interact();
+                    return; // Aktivovali jsme, konèíme
+                }
+                // 3. DUNGEON EXIT (Výstup z dungeonu - NOVÉ)
+                DungeonExit dExit = hit.GetComponent<DungeonExit>();
+                if (dExit != null)
+                {
+                    dExit.Interact();
+                    return;
                 }
             }
         }

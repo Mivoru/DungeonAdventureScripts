@@ -40,7 +40,7 @@ public class CharacterStats : MonoBehaviour
     }
 
     // Protected: Aby to vidìly i dìti (PlayerStats, EnemyStats)
-    protected void UpdateHealthUI()
+    public void UpdateHealthUI()
     {
         if (healthBar != null)
         {

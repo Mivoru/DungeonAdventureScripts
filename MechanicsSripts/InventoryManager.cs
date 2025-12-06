@@ -26,6 +26,8 @@ public class InventoryManager : MonoBehaviour
     private InventorySlot[] uiSlots; // Pole UI prvkù
 
     private bool isOpen = false;
+    // SNAPSHOT DATA
+    private List<SlotData> savedSlots = new List<SlotData>();
 
     void Awake()
     {
@@ -55,6 +57,54 @@ public class InventoryManager : MonoBehaviour
             slotScript.ClearSlot();
         }
         UpdateUI();
+    }
+    // Zavolá GameManager pøi vstupu do dungeonu
+    public void SaveSnapshot()
+    {
+        savedSlots.Clear();
+        foreach (var slot in slots)
+        {
+            // Musíme vytvoøit KOPII dat, ne jen odkaz!
+            SlotData copy = new SlotData();
+            copy.item = slot.item;
+            copy.amount = slot.amount;
+            savedSlots.Add(copy);
+        }
+        Debug.Log("Inventáø uložen (Snapshot created).");
+    }
+
+    // Zavolá GameManager pøi smrti (Normal Mode)
+    public void LoadSnapshot()
+    {
+        if (savedSlots.Count == 0) return;
+
+        for (int i = 0; i < inventorySize; i++)
+        {
+            if (i < savedSlots.Count)
+            {
+                slots[i].item = savedSlots[i].item;
+                slots[i].amount = savedSlots[i].amount;
+            }
+            else
+            {
+                slots[i].item = null;
+                slots[i].amount = 0;
+            }
+        }
+        UpdateUI();
+        Debug.Log("Inventáø obnoven ze Snapshotu.");
+    }
+
+    // Zavolá GameManager pøi smrti (Hard Mode)
+    public void ClearInventory()
+    {
+        for (int i = 0; i < slots.Length; i++)
+        {
+            slots[i].item = null;
+            slots[i].amount = 0;
+        }
+        UpdateUI();
+        Debug.Log("HARD MODE: Inventáø vymazán!");
     }
 
     public void OnToggleInventory(InputAction.CallbackContext context)
