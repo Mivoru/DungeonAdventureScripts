@@ -1,29 +1,52 @@
 using UnityEngine;
-using UnityEngine.UI;
+using System.Collections.Generic;
 
 public class DungeonMenuUI : MonoBehaviour
 {
-    public DungeonLevelData floor1Data; // Pøetáhni sem data Floor 1
+    [Header("References")]
+    public Transform buttonsContainer; // Kam tlaèítka sypat (Content)
+    public GameObject buttonPrefab;    // Vzor tlaèítka (s LevelButton skriptem)
 
-    public void OnFloor1Clicked()
+    void OnEnable()
     {
-        // Øekneme GameManageru, a naète tento level
-        if (GameManager.instance != null)
+        GenerateButtons();
+    }
+
+    void GenerateButtons()
+    {
+        // 1. Smaeme stará tlaèítka (abychom je nemìli 2x)
+        foreach (Transform child in buttonsContainer)
         {
-            // ZMÌNA: Voláme EnterDungeon (která øeší i Snapshoty), ne LoadLevel
-            GameManager.instance.EnterDungeon(floor1Data);
-        }
-        else
-        {
-            Debug.LogError("GameManager nenalezen!");
+            Destroy(child.gameObject);
         }
 
-        CloseMenu();
+        if (GameManager.instance == null) return;
+
+        List<DungeonLevelData> levels = GameManager.instance.allLevels;
+        int maxUnlocked = GameManager.instance.maxUnlockedFloor;
+
+        // 2. Projdeme seznam levelù z GameManageru
+        foreach (var levelData in levels)
+        {
+            // Vytvoøíme tlaèítko
+            GameObject newBtn = Instantiate(buttonPrefab, buttonsContainer);
+
+            // Získáme skript a nastavíme ho
+            LevelButton btnScript = newBtn.GetComponent<LevelButton>();
+            if (btnScript != null)
+            {
+                // Zjistíme, jestli je tento level odemèenı
+                // (Pøedpokládáme, e Floor Index odpovídá poøadí 1, 2, 3...)
+                bool isUnlocked = levelData.floorIndex <= maxUnlocked;
+
+                btnScript.Setup(levelData, isUnlocked);
+            }
+        }
     }
 
     public void CloseMenu()
     {
-        // Vypne tento panel (na kterém je skript)
         gameObject.SetActive(false);
     }
+
 }

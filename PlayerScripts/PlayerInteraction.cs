@@ -28,6 +28,7 @@ public class PlayerInteraction : MonoBehaviour
 
     public void OnInteract(InputAction.CallbackContext context)
     {
+        Debug.Log($"Input Interact: {context.phase}");
         // 1. Test tlaèítka
         if (context.performed)
         {
@@ -35,7 +36,6 @@ public class PlayerInteraction : MonoBehaviour
 
             // 2. Test fyziky - Hledáme VŠE v dosahu (bez filtru vrstvy, aby to našlo i Portál)
             Collider2D[] hits = Physics2D.OverlapCircleAll(transform.position, pickupRange);
-
             foreach (Collider2D hit in hits)
             {
                 // A. Zkusíme najít LOOT
@@ -60,6 +60,13 @@ public class PlayerInteraction : MonoBehaviour
                 if (dExit != null)
                 {
                     dExit.Interact();
+                    return;
+                }
+                // NOVÉ: SHOPKEEPER
+                Shopkeeper shop = hit.GetComponent<Shopkeeper>();
+                if (shop != null)
+                {
+                    shop.Interact();
                     return;
                 }
             }

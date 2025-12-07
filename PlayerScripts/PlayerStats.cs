@@ -34,6 +34,9 @@ public class PlayerStats : CharacterStats
     [Header("Death UI")]
     public GameObject deathScreenPrefab;
 
+    [Header("Economy")]
+    public int currentCoins = 0;
+
     // --- SNAPSHOT DATA (Pro návrat po smrti) ---
     private int savedLevel;
     private int savedXP;
@@ -41,6 +44,7 @@ public class PlayerStats : CharacterStats
     private int savedStatPoints;
     private int savedMaxHealth;
     private int savedBaseDamage;
+    private int savedCoins;
 
     // Snapshoty nových statù
     private int savedDefense;
@@ -52,6 +56,7 @@ public class PlayerStats : CharacterStats
     private float savedRegeneration;
 
     private GameObject activeDeathScreen;
+    private bool isDead = false;
 
     // --- 1. AWAKE: Singleton a DontDestroyOnLoad ---
     void Awake()
@@ -78,10 +83,12 @@ public class PlayerStats : CharacterStats
         UpdateHealthUI();
         UpdateLevelUI();
 
-        // Pokud jsme ve Vesnici, resetujeme pozici na start
+        // Pokud jsme ve Vesnici, resetujeme vše
         if (scene.name == "VillageScene")
         {
+            isDead = false; // OŽIVENÍ (Reset pojistky)
             transform.position = Vector3.zero;
+
             Rigidbody2D rb = GetComponent<Rigidbody2D>();
             if (rb != null) rb.linearVelocity = Vector2.zero;
         }
@@ -107,6 +114,7 @@ public class PlayerStats : CharacterStats
         savedStatPoints = statPoints;
         savedMaxHealth = maxHealth;
         savedBaseDamage = baseDamage;
+        savedCoins = currentCoins;
 
         // Uložení nových statù
         savedDefense = defense;
@@ -129,6 +137,7 @@ public class PlayerStats : CharacterStats
         statPoints = savedStatPoints;
         maxHealth = savedMaxHealth;
         baseDamage = savedBaseDamage;
+        currentCoins = savedCoins;
 
         // Obnovení nových statù
         defense = savedDefense;
@@ -176,7 +185,8 @@ public class PlayerStats : CharacterStats
         while (true)
         {
             yield return new WaitForSeconds(1f);
-            if (currentHealth < maxHealth && currentHealth > 0 && regeneration > 0)
+            // Regenerujeme jen když žijeme
+            if (!isDead && currentHealth < maxHealth && currentHealth > 0 && regeneration > 0)
             {
                 Heal(Mathf.RoundToInt(regeneration));
             }
@@ -246,12 +256,17 @@ public class PlayerStats : CharacterStats
     // Pøepisujeme TakeDamage, abychom zapoèítali Defense
     public override void TakeDamage(int damage)
     {
-        int finalDamage = Mathf.Max(1, damage - defense); // Defense snižuje dmg
+        if (isDead) return; // Pokud už jsem mrtvý, ignoruj další rány
 
+        int finalDamage = Mathf.Max(1, damage - defense);
         base.TakeDamage(finalDamage);
 
-        Animator anim = GetComponent<Animator>();
-        if (anim != null) anim.SetTrigger("Hit");
+        // Pøehrát animaci jen pokud ještì žijeme
+        if (currentHealth > 0)
+        {
+            Animator anim = GetComponent<Animator>();
+            if (anim != null) anim.SetTrigger("Hit");
+        }
     }
 
     // Výpoèet útoku (Crit) - volá meè/luk
@@ -271,16 +286,19 @@ public class PlayerStats : CharacterStats
 
     public override void Die()
     {
-        Debug.Log("Hráè zemøel!");
+        // POJISTKA: Pokud už probíhá smrt, nic nedìlej a odejdi
+        if (isDead) return;
 
-        // 1. Zobrazit Death Screen a ULOŽIT SI HO
-        if (deathScreenPrefab != null)
+        isDead = true; // Zvedneme vlajku "Jsem mrtvý"
+        Debug.Log("Hráè zemøel (Poprvé)!");
+
+        // 1. Zobrazit Death Screen (pokud už není zobrazená)
+        if (deathScreenPrefab != null && activeDeathScreen == null)
         {
             GameObject canvas = GameObject.Find("HUD");
             if (canvas)
             {
                 activeDeathScreen = Instantiate(deathScreenPrefab, canvas.transform);
-                // Zajistíme, že bude navrchu (pøekryje vše)
                 activeDeathScreen.transform.SetAsLastSibling();
             }
         }
@@ -289,66 +307,122 @@ public class PlayerStats : CharacterStats
         if (anim != null) anim.SetTrigger("Die");
 
         GetComponent<PlayerMovement>().enabled = false;
-        GetComponent<UnityEngine.InputSystem.PlayerInput>().enabled = false;
+        var pi = GetComponent<UnityEngine.InputSystem.PlayerInput>();
+        if (pi != null) pi.enabled = false;
         GetComponent<Rigidbody2D>().linearVelocity = Vector2.zero;
 
-        StartCoroutine(DeathSequence());
+        StartCoroutine(ReturnToVillageRoutine());
     }
 
-    IEnumerator DeathSequence()
+    IEnumerator DeathSequence() // Nebo ReturnToVillageRoutine
     {
-        // Èekáme 2 vteøiny (jak jsi chtìl)
+        // 1. Èekáme na animaci
         yield return new WaitForSecondsRealtime(2f);
 
-        // ZNIÈÍME DEATH SCREEN PØED NAÈTENÍM VESNICE
-        if (activeDeathScreen != null)
-        {
-            Destroy(activeDeathScreen);
-        }
+        // 2. Znièíme Death Screen
+        if (activeDeathScreen != null) Destroy(activeDeathScreen);
 
         Time.timeScale = 1f;
 
-        if (GameManager.instance != null)
-        {
-            GameManager.instance.HandleDeathPenalty();
-        }
+        // 3. Penalizace
+        if (GameManager.instance != null) GameManager.instance.HandleDeathPenalty();
 
+        // 4. Naètení scény
         UnityEngine.SceneManagement.SceneManager.LoadScene("VillageScene");
 
+        // 5. Reset Hráèe
         currentHealth = maxHealth;
         transform.position = Vector3.zero;
 
+        // 6. ZAPNUTÍ OVLÁDÁNÍ (TOHLE JE TA OPRAVA)
         GetComponent<PlayerMovement>().enabled = true;
-        GetComponent<UnityEngine.InputSystem.PlayerInput>().enabled = true;
+        var pi = GetComponent<UnityEngine.InputSystem.PlayerInput>();
 
+        if (pi != null)
+        {
+            pi.enabled = true; // Zapneme komponentu
+
+            // 2. VYNUCENÍ MAPY OVLÁDÁNÍ (Kritické!)
+            // Bez toho mùže Input System zùstat v "limbu" nebo v jiné mapì (napø. UI)
+            if (pi.actions != null)
+            {
+                var playerMap = pi.actions.FindActionMap("Player");
+                if (playerMap != null)
+                {
+                    playerMap.Enable(); // Aktivujeme mapu
+                }
+
+                pi.SwitchCurrentActionMap("Player"); // Pøepneme na ni
+            }
+        }
+
+        // 7. Reset Animátoru
         Animator anim = GetComponent<Animator>();
         if (anim != null)
         {
             anim.Rebind();
             anim.Update(0f);
         }
+
+        // 8. Reset UI
+        FindUIElements();
+        UpdateHealthUI();
+        UpdateLevelUI();
     }
 
 
-IEnumerator ReturnToVillageRoutine()
+    System.Collections.IEnumerator ReturnToVillageRoutine()
     {
-        yield return new WaitForSecondsRealtime(3f);
+        yield return new WaitForSecondsRealtime(2f);
+
+        // 2. Znièíme Death Screen
+        if (activeDeathScreen != null) Destroy(activeDeathScreen);
+
         Time.timeScale = 1f;
 
+        // 3. Penalizace
+        if (GameManager.instance != null) GameManager.instance.HandleDeathPenalty();
+
+        // 4. Naètení scény
         UnityEngine.SceneManagement.SceneManager.LoadScene("VillageScene");
 
-        // OnSceneLoaded se postará o reset pozice a UI
+        // 5. Reset Hráèe
         currentHealth = maxHealth;
+        transform.position = Vector3.zero;
 
+        // 6. ZAPNUTÍ OVLÁDÁNÍ (TOHLE JE TA OPRAVA)
         GetComponent<PlayerMovement>().enabled = true;
         var pi = GetComponent<UnityEngine.InputSystem.PlayerInput>();
-        if (pi != null) pi.enabled = true;
 
+        if (pi != null)
+        {
+            pi.enabled = true; // Zapneme komponentu
+
+            // 2. VYNUCENÍ MAPY OVLÁDÁNÍ (Kritické!)
+            // Bez toho mùže Input System zùstat v "limbu" nebo v jiné mapì (napø. UI)
+            if (pi.actions != null)
+            {
+                var playerMap = pi.actions.FindActionMap("Player");
+                if (playerMap != null)
+                {
+                    playerMap.Enable(); // Aktivujeme mapu
+                }
+
+                pi.SwitchCurrentActionMap("Player"); // Pøepneme na ni
+            }
+        }
+
+        // 7. Reset Animátoru
         Animator anim = GetComponent<Animator>();
         if (anim != null)
         {
             anim.Rebind();
             anim.Update(0f);
         }
+
+        // 8. Reset UI
+        FindUIElements();
+        UpdateHealthUI();
+        UpdateLevelUI();
     }
 }

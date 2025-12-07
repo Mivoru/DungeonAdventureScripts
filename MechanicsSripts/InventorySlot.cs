@@ -3,7 +3,7 @@ using UnityEngine.UI;
 using TMPro;
 using UnityEngine.EventSystems;
 
-public class InventorySlot : MonoBehaviour, IDropHandler
+public class InventorySlot : MonoBehaviour, IDropHandler, IPointerClickHandler
 {
     public int slotIndex;
 
@@ -72,6 +72,30 @@ public class InventorySlot : MonoBehaviour, IDropHandler
                 // To okamžitì vrátí ikonku do pùvodního slotu a resetuje ji.
                 // Protože jsme prohodili data, UpdateUI jí hned poté zmìní obrázek na ten správný.
                 droppedItem.FinishDrag();
+            }
+        }
+    }
+    public void OnPointerClick(PointerEventData eventData)
+    {
+        // Reagujeme na Pravé tlaèítko myši (Right Click)
+        if (eventData.button == PointerEventData.InputButton.Right)
+        {
+            // Zkontrolujeme, jestli je obchod otevøený
+            if (ShopUI.instance != null && ShopUI.instance.shopPanel.activeSelf)
+            {
+                // Získáme data o pøedmìtu v tomto slotu
+                var slotData = InventoryManager.instance.GetSlotData(slotIndex);
+
+                if (slotData != null && slotData.item != null)
+                {
+                    // Prodáme ho!
+                    ShopUI.instance.TrySellItem(slotData.item, slotIndex);
+                }
+            }
+            else
+            {
+                // Pokud obchod není otevøený, tady mùžeš dát logiku pro "Equip" nebo "Use" (snìzení lektvaru)
+                Debug.Log("Pravý klik: Tady by se item použil/nasadil.");
             }
         }
     }

@@ -1,3 +1,4 @@
+using System.Collections.Generic;
 using UnityEngine;
 using UnityEngine.SceneManagement;
 
@@ -19,6 +20,10 @@ public class GameManager : MonoBehaviour
     public string dungeonSceneName = "DungeonScene";
     public string villageSceneName = "VillageScene";
     public string menuSceneName = "MainMenu";
+
+    [Header("Levels Configuration")]
+    // Sem v Inspectoru pøetáhneš Floor_1, Floor_2, Floor_3...
+    public List<DungeonLevelData> allLevels;
 
     void Awake()
     {
@@ -82,26 +87,40 @@ public class GameManager : MonoBehaviour
     // Voláno pøi SMRTI (z PlayerStats)
     public void HandleDeathPenalty()
     {
-        Debug.Log($"Handling Death Penalty for {currentDifficulty} Mode...");
+        Debug.Log($"Zpracovávám smrt pro obtížnost: {currentDifficulty}");
 
-        // 1. RESTORE STATS (V obou módech vracíme level na stav pøed vstupem)
+        // 1. STATISTIKY (Level, XP, HP...)
         if (PlayerStats.instance != null)
         {
-            PlayerStats.instance.LoadSnapshot();
+            if (currentDifficulty == Difficulty.Normal)
+            {
+                // NORMAL: Level a XP zùstávají (hráè si nechá, co nahrál)
+                // Nenaèítáme snapshot statistik!
+                Debug.Log("Normal Mode: XP a Level zachovány.");
+            }
+            else
+            {
+                // HARD: Vracíme se na úroveò pøed vstupem do dungeonu
+                PlayerStats.instance.LoadSnapshot();
+                Debug.Log("Hard Mode: Staty resetovány na stav pøed dungeonem.");
+            }
         }
 
-        // 2. INVENTORY PENALTY
+        // 2. INVENTÁØ (Pøedmìty)
         if (InventoryManager.instance != null)
         {
             if (currentDifficulty == Difficulty.Normal)
             {
-                // Normal: Vracíme inventáø do stavu pøed vstupem (ztratíš jen to, co jsi našel v dungeonu)
+                // NORMAL: Vracíme se do stavu pøed vstupem
+                // (Zùstane to, co jsi mìl. Zmizí to, co jsi našel v dungeonu)
                 InventoryManager.instance.LoadSnapshot();
+                Debug.Log("Normal Mode: Inventáø obnoven ze zálohy.");
             }
             else
             {
-                // Hard: Pøijdeš o všechno
+                // HARD: Pøijdeš o všechno
                 InventoryManager.instance.ClearInventory();
+                Debug.Log("Hard Mode: Inventáø vymazán.");
             }
         }
     }

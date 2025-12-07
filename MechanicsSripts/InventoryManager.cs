@@ -8,13 +8,16 @@ public class InventoryManager : MonoBehaviour
     public static InventoryManager instance;
 
     [Header("Config")]
-    public int inventorySize = 40; // 5x8 slotù
+    public int inventorySize = 40;
     public GameObject inventoryPanel;
     public Transform slotsContainer;
     public GameObject slotPrefab;
-    public GameObject lootPrefab; // Prefab pro vyhazování na zem
+    public GameObject lootPrefab;
 
-    // Vnitøní tøída pro data slotu
+    [Header("UI Position")]
+    public RectTransform inventoryRect; // Pøetáhni sem InventoryPanel (musí mít RectTransform)
+    private Vector2 defaultPosition;    // Tady si uložíme, kde byl pùvodnì (uprostøed)
+
     [System.Serializable]
     public class SlotData
     {
@@ -22,28 +25,60 @@ public class InventoryManager : MonoBehaviour
         public int amount;
     }
 
-    public SlotData[] slots; // Pole všech slotù (Data)
-    private InventorySlot[] uiSlots; // Pole UI prvkù
-
+    public SlotData[] slots;
+    private InventorySlot[] uiSlots;
     private bool isOpen = false;
-    // SNAPSHOT DATA
+
+    // Snapshot pro návrat po smrti
     private List<SlotData> savedSlots = new List<SlotData>();
 
     void Awake()
     {
+        // --- OPRAVA SINGLETONU ---
+        // Pokud už instance existuje a není to tato, znièíme tento duplikát
+        if (instance != null && instance != this)
+        {
+            Destroy(gameObject);
+            return;
+        }
+
+        // Pokud neexistuje, nastavíme se jako hlavní a pøežijeme naèítání
         instance = this;
+        DontDestroyOnLoad(gameObject.transform.root.gameObject); // Zajistíme, že pøežije celý HUD
+        // -------------------------
+
+        // Inicializace dat (pouze pokud jsme ten hlavní)
         slots = new SlotData[inventorySize];
         for (int i = 0; i < inventorySize; i++) slots[i] = new SlotData();
     }
 
     void Start()
     {
-        inventoryPanel.SetActive(false);
+        // Pokud panel není pøiøazený, zkusíme ho najít (pojistka)
+        if (inventoryPanel == null)
+        {
+            Transform panelTrans = transform.Find("InventoryPanel"); // Uprav cestu dle hierarchie
+            if (panelTrans != null) inventoryPanel = panelTrans.gameObject;
+        }
+
+        if (inventoryPanel != null) inventoryPanel.SetActive(false);
+        
+
         CreateUISlots();
+        if (inventoryRect != null)
+        {
+            defaultPosition = inventoryRect.anchoredPosition;
+        }
     }
 
     void CreateUISlots()
     {
+        // Vyèistíme staré sloty, pokud nìjaké zbyly (pro jistotu)
+        foreach (Transform child in slotsContainer)
+        {
+            Destroy(child.gameObject);
+        }
+
         uiSlots = new InventorySlot[inventorySize];
         for (int i = 0; i < inventorySize; i++)
         {
@@ -51,123 +86,64 @@ public class InventoryManager : MonoBehaviour
             InventorySlot slotScript = obj.GetComponent<InventorySlot>();
             slotScript.slotIndex = i;
             uiSlots[i] = slotScript;
-
-            // --- PØIDAT TENTO ØÁDEK ---
-            // Okamžitì vyèistíme vzhled, aby zmizelo "100/100" a defaultní ikona
             slotScript.ClearSlot();
         }
         UpdateUI();
-    }
-    // Zavolá GameManager pøi vstupu do dungeonu
-    public void SaveSnapshot()
-    {
-        savedSlots.Clear();
-        foreach (var slot in slots)
-        {
-            // Musíme vytvoøit KOPII dat, ne jen odkaz!
-            SlotData copy = new SlotData();
-            copy.item = slot.item;
-            copy.amount = slot.amount;
-            savedSlots.Add(copy);
-        }
-        Debug.Log("Inventáø uložen (Snapshot created).");
-    }
-
-    // Zavolá GameManager pøi smrti (Normal Mode)
-    public void LoadSnapshot()
-    {
-        if (savedSlots.Count == 0) return;
-
-        for (int i = 0; i < inventorySize; i++)
-        {
-            if (i < savedSlots.Count)
-            {
-                slots[i].item = savedSlots[i].item;
-                slots[i].amount = savedSlots[i].amount;
-            }
-            else
-            {
-                slots[i].item = null;
-                slots[i].amount = 0;
-            }
-        }
-        UpdateUI();
-        Debug.Log("Inventáø obnoven ze Snapshotu.");
-    }
-
-    // Zavolá GameManager pøi smrti (Hard Mode)
-    public void ClearInventory()
-    {
-        for (int i = 0; i < slots.Length; i++)
-        {
-            slots[i].item = null;
-            slots[i].amount = 0;
-        }
-        UpdateUI();
-        Debug.Log("HARD MODE: Inventáø vymazán!");
     }
 
     public void OnToggleInventory(InputAction.CallbackContext context)
     {
         if (context.performed)
         {
+            Debug.LogError(" BYLA ZAVOLÁNA METODA ONTOGGLEINVENTORY! (To se na E nesmí stát)");
             isOpen = !isOpen;
-
-            if (isOpen)
+            if (inventoryPanel != null)
             {
-                inventoryPanel.SetActive(true);
-                UpdateUI();
-            }
-            else
-            {
-                // --- ZÁCHRANNÁ BRZDA ---
-                // Pokud hráè nìco drží v ruce a zavírá inventáø, vrátíme to zpìt do slotu
-                if (DraggableItem.itemBeingDragged != null)
+                inventoryPanel.SetActive(isOpen);
+                if (isOpen) UpdateUI();
+                else
                 {
-                    DraggableItem.itemBeingDragged.FinishDrag();
+                    if (DraggableItem.itemBeingDragged != null)
+                        DraggableItem.itemBeingDragged.FinishDrag();
                 }
-                // -----------------------
-
-                inventoryPanel.SetActive(false);
             }
+            
         }
+    
     }
 
-    // === HLAVNÍ LOGIKA PØIDÁVÁNÍ ===
     public bool AddItem(ItemData item, int amount = 1)
     {
-        // 1. Zkusíme pøidat do existujícího stacku (pokud je stackable)
+        // 1. Stackování
         if (item.isStackable)
         {
             for (int i = 0; i < slots.Length; i++)
             {
                 if (slots[i].item == item && slots[i].amount < item.maxStackSize)
                 {
-                    int spaceLeft = item.maxStackSize - slots[i].amount;
-                    int toAdd = Mathf.Min(spaceLeft, amount);
-
-                    slots[i].amount += toAdd;
-                    amount -= toAdd;
-
+                    int space = item.maxStackSize - slots[i].amount;
+                    int add = Mathf.Min(space, amount);
+                    slots[i].amount += add;
+                    amount -= add;
                     if (amount <= 0)
                     {
                         UpdateUI();
-                        return true; // Všechno se vešlo
+                        return true;
                     }
                 }
             }
         }
 
-        // 2. Zbytek dáme do prázdných slotù
+        // 2. Prázdné sloty
         while (amount > 0)
         {
             int emptyIndex = FindFirstEmptySlot();
-            if (emptyIndex == -1) return false; // Inventáø je plný
+            if (emptyIndex == -1) return false;
 
             slots[emptyIndex].item = item;
-            int toAdd = Mathf.Min(item.maxStackSize, amount);
-            slots[emptyIndex].amount = toAdd;
-            amount -= toAdd;
+            int add = Mathf.Min(item.maxStackSize, amount);
+            slots[emptyIndex].amount = add;
+            amount -= add;
         }
 
         UpdateUI();
@@ -183,7 +159,6 @@ public class InventoryManager : MonoBehaviour
         return -1;
     }
 
-    // === PØESOUVÁNÍ A DROP ===
     public void SwapItems(int indexA, int indexB)
     {
         SlotData temp = slots[indexA];
@@ -199,16 +174,14 @@ public class InventoryManager : MonoBehaviour
             GameObject player = GameObject.FindGameObjectWithTag("Player");
             if (player != null)
             {
-                // --- OPRAVA ZDE: Pøidáno "UnityEngine." ---
                 Vector3 dropPos = player.transform.position + (Vector3)UnityEngine.Random.insideUnitCircle * 1.5f;
-
                 GameObject loot = Instantiate(lootPrefab, dropPos, Quaternion.identity);
                 LootPickup pickup = loot.GetComponent<LootPickup>();
 
                 if (pickup != null)
                 {
                     pickup.SetItem(slots[slotIndex].item, slots[slotIndex].amount);
-                    pickup.pickupDelay = 2.0f;
+                    pickup.pickupDelay = 1.0f;
                 }
             }
 
@@ -220,9 +193,108 @@ public class InventoryManager : MonoBehaviour
 
     void UpdateUI()
     {
+        if (uiSlots == null) return; // Pojistka proti chybì pøi ukonèování
+
         for (int i = 0; i < slots.Length; i++)
         {
-            uiSlots[i].UpdateSlot(slots[i].item, slots[i].amount);
+            if (i < uiSlots.Length && uiSlots[i] != null)
+            {
+                uiSlots[i].UpdateSlot(slots[i].item, slots[i].amount);
+            }
         }
+    }
+    // Tuto metodu zavolá ShopUI pøi prodeji
+    public void RemoveItem(int slotIndex, int amountToRemove)
+    {
+        if (slots[slotIndex].item != null)
+        {
+            slots[slotIndex].amount -= amountToRemove;
+
+            // Pokud klesne na 0, vymažeme slot
+            if (slots[slotIndex].amount <= 0)
+            {
+                slots[slotIndex].item = null;
+                slots[slotIndex].amount = 0;
+            }
+
+            UpdateUI();
+        }
+    }
+
+    // Pomocná metoda pro získání dat slotu
+    public SlotData GetSlotData(int index)
+    {
+        return slots[index];
+    }
+
+    // --- SNAPSHOTS (Pro GameManager) ---
+    public void SaveSnapshot()
+    {
+        savedSlots.Clear();
+        foreach (var slot in slots)
+        {
+            SlotData copy = new SlotData { item = slot.item, amount = slot.amount };
+            savedSlots.Add(copy);
+        }
+    }
+
+    public void LoadSnapshot()
+    {
+        if (savedSlots.Count == 0) return;
+        for (int i = 0; i < inventorySize; i++)
+        {
+            if (i < savedSlots.Count)
+            {
+                slots[i].item = savedSlots[i].item;
+                slots[i].amount = savedSlots[i].amount;
+            }
+            else
+            {
+                slots[i].item = null;
+                slots[i].amount = 0;
+            }
+        }
+        UpdateUI();
+    }
+
+    public void ClearInventory()
+    {
+        for (int i = 0; i < slots.Length; i++)
+        {
+            slots[i].item = null;
+            slots[i].amount = 0;
+        }
+        UpdateUI();
+    }
+    public void OpenInventoryForTrading(Vector2 offsetPosition)
+    {
+        isOpen = true;
+        inventoryPanel.SetActive(true);
+        UpdateUI();
+
+        // Posuneme ho na bok
+        if (inventoryRect != null)
+        {
+            inventoryRect.anchoredPosition = offsetPosition;
+        }
+    }
+    // Tuto metodu zavolá ShopUI pøi zavøení
+    public void ResetInventoryPosition()
+    {
+        // Vrátíme ho na pùvodní místo (na støed)
+        if (inventoryRect != null)
+        {
+            inventoryRect.anchoredPosition = defaultPosition;
+        }
+
+        // Volitelné: Mùžeme ho i zavøít, nebo nechat otevøený
+        CloseInventory();
+    }
+    public void CloseInventory()
+    {
+        isOpen = false;
+        inventoryPanel.SetActive(false);
+        // Reset pozice pro jistotu, aby pøíštì nebyl šikmo, když ho otevøeš klávesou I
+        if (inventoryRect != null) inventoryRect.anchoredPosition = defaultPosition;
     }
 }

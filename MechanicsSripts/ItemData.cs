@@ -10,4 +10,7 @@ public class ItemData : ScriptableObject
     [Header("Stacking")]
     public bool isStackable = true;
     public int maxStackSize = 100; // Kolik se jich vejde na sebe
+
+    [Header("Economy")]
+    public int price = 10;
 }
