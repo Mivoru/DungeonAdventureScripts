@@ -4,11 +4,11 @@ using UnityEngine.InputSystem;
 
 public class MiningTool : MonoBehaviour
 {
-    [Header("Settings")]
-    public Transform attackPoint;
-    public float range = 1.0f;
-    public LayerMask resourceLayer; // Vrstva "Resources"
-    public int miningPower = 1;     // Kolik ubere HP rudì
+    [Header("Mining Settings")]
+    public float range = 1.5f;      // Dosah (jako u meèe)
+    public float miningAngle = 100f; // Šíøka zábìru (výseè)
+    public LayerMask resourceLayer;  // Vrstva "Resources"
+    public int miningPower = 1;      // Síla kopnutí
     public float swingDuration = 0.3f;
 
     private bool isSwinging = false;
@@ -19,7 +19,6 @@ public class MiningTool : MonoBehaviour
         defaultRot = transform.localRotation;
     }
 
-    // Voláno z WeaponManageru
     public void OnAttack(InputAction.CallbackContext context)
     {
         if (context.performed && !isSwinging)
@@ -32,46 +31,68 @@ public class MiningTool : MonoBehaviour
     {
         isSwinging = true;
 
-        // 1. Animace (jednoduché otoèení, jako meè)
+        // 1. Logika Tìžby (Výseè)
+        MineCone();
+
+        // 2. Animace nástroje (vizuální otoèení)
         float timer = 0f;
-        Quaternion targetRot = Quaternion.Euler(0, 0, -45f); // Švih dolù
+        Quaternion targetRot = Quaternion.Euler(0, 0, -50f);
 
         while (timer < swingDuration)
         {
             transform.localRotation = Quaternion.Lerp(defaultRot, targetRot, timer / swingDuration);
             timer += Time.deltaTime;
-
-            // Zásah v polovinì animace
-            if (timer >= swingDuration * 0.5f && timer < (swingDuration * 0.5f) + Time.deltaTime)
-            {
-                CheckHit();
-            }
             yield return null;
         }
 
-        transform.localRotation = defaultRot; // Zpìt
+        // Návrat zpìt
+        transform.localRotation = defaultRot;
         isSwinging = false;
     }
 
-    void CheckHit()
+    void MineCone()
     {
-        Collider2D[] hits = Physics2D.OverlapCircleAll(attackPoint.position, range, resourceLayer);
+        // A) Zjištìní smìru (Podle Animátoru hráèe)
+        Vector2 facingDir = Vector2.down; // Default
+        Animator anim = GetComponentInParent<Animator>();
+
+        if (anim != null)
+        {
+            facingDir = new Vector2(anim.GetFloat("LastHorizontal"), anim.GetFloat("LastVertical"));
+            if (facingDir.sqrMagnitude > 0.01f) facingDir.Normalize();
+            else facingDir = Vector2.down;
+        }
+
+        // B) Støed tìžby (Od støedu hráèe)
+        Vector3 origin = transform.parent.position;
+
+        // C) Hledáme rudy v kruhu
+        Collider2D[] hits = Physics2D.OverlapCircleAll(origin, range, resourceLayer);
+
         foreach (var hit in hits)
         {
-            ResourceNode node = hit.GetComponent<ResourceNode>();
-            if (node != null)
+            Vector2 dirToTarget = (hit.transform.position - origin).normalized;
+
+            // D) Kontrola Úhlu (Je ruda pøed námi?)
+            if (Vector2.Angle(facingDir, dirToTarget) < miningAngle / 2f)
             {
-                node.TakeHit(miningPower);
+                ResourceNode node = hit.GetComponent<ResourceNode>();
+                if (node != null)
+                {
+                    node.TakeHit(miningPower);
+                    return; // Vytìžíme jen jednu rudu na jeden švih (nebo to smaž, pokud chceš plošnou tìžbu)
+                }
             }
         }
     }
 
     void OnDrawGizmosSelected()
     {
-        if (attackPoint)
+        // Vizualizace dosahu (pokud je skript pøipojen)
+        if (transform.parent != null)
         {
             Gizmos.color = Color.gray;
-            Gizmos.DrawWireSphere(attackPoint.position, range);
+            Gizmos.DrawWireSphere(transform.parent.position, range);
         }
     }
 }

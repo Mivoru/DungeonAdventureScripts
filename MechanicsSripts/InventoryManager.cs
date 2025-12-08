@@ -207,13 +207,25 @@ public class InventoryManager : MonoBehaviour
 
     void UpdateUI()
     {
-        if (uiSlots == null) return; // Pojistka proti chybì pøi ukonèování
+        if (uiSlots == null) return;
 
         for (int i = 0; i < slots.Length; i++)
         {
+            // 1. Aktualizace velkého inventáøe (pokud je otevøený)
             if (i < uiSlots.Length && uiSlots[i] != null)
             {
                 uiSlots[i].UpdateSlot(slots[i].item, slots[i].amount);
+            }
+
+            // 2. NOVÉ: Aktualizace Hotbaru (jen pro prvních 6 slotù)
+            if (i < 6 && HotbarManager.instance != null)
+            {
+                // Musíme se dostat k tìm slotùm v HotbarManageru
+                // To udìláme tak, že HotbarManager bude mít veøejné pole slotù, nebo metodu.
+                // Pro teï to zjednodušíme: HotbarManager si to naète sám ve Startu,
+                // ale potøebujeme metodu "RefreshSlot".
+
+                HotbarManager.instance.RefreshHotbarSlot(i, slots[i].item, slots[i].amount);
             }
         }
     }
@@ -361,4 +373,5 @@ public class InventoryManager : MonoBehaviour
             }
         }
     }
+
 }

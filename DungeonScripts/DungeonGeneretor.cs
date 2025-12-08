@@ -43,6 +43,9 @@ public class DungeonGenerator : MonoBehaviour
     [Header("Boss Room Setup")]
     public GameObject bossRoomControllerPrefab;
 
+    [Header("Spawning Config")]
+    public LayerMask spawnBlockingLayer;
+
     // --- PØIDÁNO: KONFIGURACE PRO RUDY ---
     [System.Serializable]
     public class ResourceConfig
@@ -523,27 +526,28 @@ public class DungeonGenerator : MonoBehaviour
         yield return new WaitForSeconds(0.2f);
 
         Debug.Log("FinalizeLevel: Building NavMesh...");
-
         var surface = navMeshObject.GetComponent<NavMeshSurface>();
         if (surface != null)
         {
             surface.RemoveData();
             surface.BuildNavMesh();
 
+            // Poèkáme na update
+            yield return null;
+
             var triang = NavMesh.CalculateTriangulation();
             if (triang.vertices.Length > 0)
             {
-                Debug.Log($" NavMesh OK! Vertices: {triang.vertices.Length}");
-                foreach (var node in GameObject.FindObjectsOfType<ResourceNode>()) Destroy(node.gameObject);
+                Debug.Log($" NavMesh OK!");
                 MovePlayerToStart();
                 SpawnEnemyGroups();
                 SpawnSoloEnemies();
+
+                // --- TADY BYLO CHYBÌJÍCÍ VOLÁNÍ ---
                 SpawnResources();
+                // ----------------------------------
             }
-            else
-            {
-                Debug.LogError(" NavMesh má 0 vrcholù.");
-            }
+            else Debug.LogError("NavMesh má 0 vrcholù.");
         }
     }
 
@@ -616,36 +620,49 @@ public class DungeonGenerator : MonoBehaviour
 
     void SpawnResources()
     {
-        if (resourcesToSpawn == null) return;
+        Debug.Log("--- ZAÈÍNÁM SPAWNOVAT RUDY ---");
+
+        if (resourcesToSpawn == null || resourcesToSpawn.Count == 0)
+        {
+            Debug.LogWarning("Seznam resourcesToSpawn je prázdný!");
+            return;
+        }
 
         foreach (var config in resourcesToSpawn)
         {
-            if (config.prefab == null) continue;
+            if (config.prefab == null)
+            {
+                Debug.LogError($"ResourceConfig '{config.name}' nemá pøiøazený prefab!");
+                continue;
+            }
 
             int count = UnityEngine.Random.Range(config.minCount, config.maxCount + 1);
+            Debug.Log($"Pokusím se spawnout {count} ks rudy: {config.name}");
+
             int spawned = 0;
             int attempts = 0;
 
             while (spawned < count && attempts < 500)
             {
                 attempts++;
-                // Vybereme náhodnou místnost (kromì startu a bosse)
                 if (rooms.Count <= 2) break;
+
                 Room r = rooms[UnityEngine.Random.Range(1, rooms.Count - 1)];
 
-                // Náhodná pozice
                 float randomX = UnityEngine.Random.Range(r.bounds.xMin + 2, r.bounds.xMax - 2);
                 float randomY = UnityEngine.Random.Range(r.bounds.yMin + 2, r.bounds.yMax - 2);
                 Vector3 spawnPos = new Vector3(randomX, randomY, 0);
 
-                // Kontrola kolize (aby to nebylo ve zdi nebo v jiné rudì)
-                // Používáme malý kruh
-                if (Physics2D.OverlapCircle(spawnPos, 0.5f) == null)
+                // ZMÌNA: Používáme spawnBlockingLayer
+                Collider2D hit = Physics2D.OverlapCircle(spawnPos, 0.5f, spawnBlockingLayer);
+
+                if (hit == null)
                 {
                     Instantiate(config.prefab, spawnPos, Quaternion.identity);
                     spawned++;
                 }
             }
+            Debug.Log($"-> Úspìšnì spawnuto: {spawned} / {count} ks.");
         }
     }
 

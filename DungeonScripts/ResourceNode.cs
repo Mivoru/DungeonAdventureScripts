@@ -3,13 +3,13 @@ using UnityEngine;
 public class ResourceNode : MonoBehaviour
 {
     [Header("Mining Info")]
-    public int maxHealth = 3; // Poèet kopnutí
-    public ItemData itemToDrop; // Co z toho padne
-    public int dropAmount = 1;
-    public GameObject dropPrefab; // LootPickup prefab (pytel/ikonka na zemi)
+    public int maxHealth = 3;
+    public ItemData itemToDrop;     // CO padne (Musí být pøiøazeno v Inspectoru!)
+    public int dropAmount = 1;      // KOLIK toho padne
+    public GameObject dropPrefab;   // Pytlík (LootDrop prefab) - Musí být pøiøazeno!
 
     [Header("Visuals")]
-    public GameObject hitEffect; // Volitelné: Èástice pøi kopnutí
+    public GameObject hitEffect;    // Particle efekt (volitelné)
 
     private int currentHealth;
 
@@ -22,9 +22,12 @@ public class ResourceNode : MonoBehaviour
     {
         currentHealth -= damage;
 
-        // Zde mùžeš pøidat zvuk cinknutí nebo efekt
+        // Vizuální efekt (zatøesení)
+        StartCoroutine(ShakeEffect());
+
         if (hitEffect) Instantiate(hitEffect, transform.position, Quaternion.identity);
-        Debug.Log("Cink! Tìžím rudu...");
+
+        Debug.Log($"Kop! Zbývá HP: {currentHealth}");
 
         if (currentHealth <= 0)
         {
@@ -34,17 +37,49 @@ public class ResourceNode : MonoBehaviour
 
     void BreakNode()
     {
-        if (dropPrefab != null && itemToDrop != null)
+        // --- DIAGNOSTIKA CHYB ---
+        if (dropPrefab == null)
         {
-            GameObject loot = Instantiate(dropPrefab, transform.position, Quaternion.identity);
+            Debug.LogError($"CHYBA: Ruda '{name}' nemá pøiøazený 'Drop Prefab' (Pytlík) v Inspectoru!");
+            Destroy(gameObject);
+            return;
+        }
 
-            LootPickup pickup = loot.GetComponent<LootPickup>();
-            if (pickup != null)
-            {
-                pickup.SetItem(itemToDrop, dropAmount);
-            }
+        if (itemToDrop == null)
+        {
+            Debug.LogError($"CHYBA: Ruda '{name}' nemá pøiøazený 'Item To Drop' (ItemData) v Inspectoru!");
+            Destroy(gameObject);
+            return;
+        }
+        // -----------------------
+
+        // Vytvoøení lootu
+        GameObject loot = Instantiate(dropPrefab, transform.position, Quaternion.identity);
+        LootPickup pickup = loot.GetComponent<LootPickup>();
+
+        if (pickup != null)
+        {
+            pickup.SetItem(itemToDrop, dropAmount);
+            Debug.Log($"Vytìženo: {itemToDrop.itemName} x{dropAmount}");
+        }
+        else
+        {
+            Debug.LogError("CHYBA: Prefab lootu nemá skript 'LootPickup'!");
         }
 
         Destroy(gameObject);
+    }
+
+    System.Collections.IEnumerator ShakeEffect()
+    {
+        Vector3 originalPos = transform.position;
+        float time = 0;
+        while (time < 0.1f)
+        {
+            transform.position = originalPos + (Vector3)UnityEngine.Random.insideUnitCircle * 0.05f;
+            time += Time.deltaTime;
+            yield return null;
+        }
+        transform.position = originalPos;
     }
 }
