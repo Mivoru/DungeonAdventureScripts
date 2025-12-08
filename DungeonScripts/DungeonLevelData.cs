@@ -17,4 +17,8 @@ public class DungeonLevelData : ScriptableObject
     public List<DungeonGenerator.EnemyGroup> enemyGroups;
     public List<DungeonGenerator.SoloEnemyConfig> soloEnemies;
     public int totalGroups = 0;
+
+    [Header("Resources")]
+    public List<DungeonGenerator.ResourceConfig> resources;
+
 }

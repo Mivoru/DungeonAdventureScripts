@@ -1,132 +1,156 @@
 using UnityEngine;
 using UnityEngine.UI;
 using TMPro;
+using System.Collections; // Nutné pro Coroutiny
 using System.Collections.Generic;
 
 public class ShopUI : MonoBehaviour
 {
+    public static ShopUI instance;
+
     [Header("References")]
-    public GameObject shopPanel; // Celé okno
-    public Transform itemsContainer; // Kam sypat tlaèítka (Content ve ScrollView)
-    public GameObject shopItemPrefab; // Vzor tlaèítka zboží
+    public GameObject shopPanel;
+    public Transform itemsContainer;
+    public GameObject shopItemPrefab;
     public TMP_Text shopNameText;
     public TMP_Text playerCoinsText;
+
     [Header("Layout Settings")]
-    // Kam se má posunout inventáø, když obchodujeme? 
-    // Zkus tøeba X: 300, Y: 0 (aby byl vpravo od obchodu)
     public Vector2 inventoryTradePosition = new Vector2(400, 0);
 
     private Shopkeeper currentShopkeeper;
-    public static ShopUI instance;
+    private bool isOpening = false; // Pojistka
+
+    void Awake()
+    {
+        if (instance != null && instance != this)
+        {
+            Destroy(gameObject);
+            return;
+        }
+        instance = this;
+
+        // Hned v Awake vypneme panel, aby nestrašil
+        if (shopPanel != null) shopPanel.SetActive(false);
+    }
 
     void Start()
     {
-        shopPanel.SetActive(false);
+        // Necháme prázdné, aby nám to nepøepisovalo stav
     }
+
     void Update()
     {
-        // Kontrolujeme jen, když je obchod otevøený
+        // POJISTKA: Pokud se obchod právì otevírá (prvních pár milisekund), nekontrolujeme vzdálenost
+        if (isOpening) return;
+
+        // Auto-zavøení pøi vzdálení
         if (shopPanel.activeSelf && currentShopkeeper != null && PlayerStats.instance != null)
         {
-            // Zmìøíme vzdálenost mezi Hráèem a Obchodníkem
             float dist = Vector2.Distance(PlayerStats.instance.transform.position, currentShopkeeper.transform.position);
 
-            // Pokud odejdeš dál než 3 metry, obchod se zavøe
+            // Pokud jsi dál než 3 metry, zavøít
             if (dist > 3.0f)
             {
                 CloseShop();
             }
         }
     }
+
     public void ToggleShop(Shopkeeper shopkeeper)
     {
-        // Pokud je obchod už otevøený A mluvíme se stejným obchodníkem -> ZAVØÍT
         if (shopPanel.activeSelf && currentShopkeeper == shopkeeper)
         {
             CloseShop();
         }
         else
         {
-            // Jinak otevøít (buï bylo zavøeno, nebo mluvíme s jiným obchodníkem)
             OpenShop(shopkeeper);
         }
     }
 
     public void OpenShop(Shopkeeper shopkeeper)
     {
+        Debug.Log("SHOP: Otevírám obchod...");
         currentShopkeeper = shopkeeper;
-        shopNameText.text = shopkeeper.shopName;
+
+        if (shopNameText) shopNameText.text = shopkeeper.shopName;
         UpdateCoinsText();
         GenerateShopItems();
 
+        // Spustíme "bezpeèné" otevøení
+        StartCoroutine(ForceOpenRoutine());
+    }
+
+    // --- NOVÁ POJISTKA PROTI ZAVØENÍ ---
+    IEnumerator ForceOpenRoutine()
+    {
+        isOpening = true; // Zapneme ochranu proti Update()
+
+        // 1. Zapneme panel hned
         shopPanel.SetActive(true);
 
-        // --- NOVÉ: OTEVØÍT I INVENTÁØ A POSUNOUT HO ---
+        // Otevøeme inventáø
         if (InventoryManager.instance != null)
         {
             InventoryManager.instance.OpenInventoryForTrading(inventoryTradePosition);
         }
+
+        // 2. Poèkáme na konec snímku (aby probìhly všechny Starty a Layouty)
+        yield return new WaitForEndOfFrame();
+
+        // 3. PRO JISTOTU ZNOVU ZAPNEME (Kdyby ho nìkdo vypnul)
+        shopPanel.SetActive(true);
+
+        // Vynutíme pøekreslení (proti glitchùm v grafice)
+        LayoutRebuilder.ForceRebuildLayoutImmediate(shopPanel.GetComponent<RectTransform>());
+
+        // 4. Poèkáme chvilku (0.2s), než zaèneme kontrolovat vzdálenost
+        yield return new WaitForSeconds(0.2f);
+
+        isOpening = false; // Vypneme ochranu
     }
 
     public void CloseShop()
     {
+        // Pokud se zrovna otevírá, nedovolíme ho zavøít
+        if (isOpening) return;
+
+        Debug.Log("SHOP: Zavírám obchod.");
         shopPanel.SetActive(false);
         currentShopkeeper = null;
 
-        // --- NOVÉ: ZAVØÍT INVENTÁØ A VRÁTIT HO ZPÌT ---
         if (InventoryManager.instance != null)
         {
             InventoryManager.instance.ResetInventoryPosition();
         }
     }
 
-    void UpdateCoinsText()
+    // ... ZBYTEK KÓDU (TrySellItem, TryBuyItem, atd.) NECH STEJNÝ ...
+
+    public void TrySellItem(ItemData item, int slotIndex)
     {
-        if (PlayerStats.instance != null)
-        {
-            playerCoinsText.text = $"Coins: {PlayerStats.instance.currentCoins}";
-        }
+        if (!shopPanel.activeSelf) return;
+
+        int sellPrice = Mathf.Max(1, item.price / 2);
+        if (PlayerStats.instance != null) PlayerStats.instance.currentCoins += sellPrice;
+        if (InventoryManager.instance != null) InventoryManager.instance.RemoveItem(slotIndex, 1);
+
+        UpdateCoinsText();
+        Debug.Log($"Prodáno: {item.itemName}");
     }
 
-    void GenerateShopItems()
-    {
-        // 1. Smažeme staré položky
-        foreach (Transform child in itemsContainer)
-        {
-            Destroy(child.gameObject);
-        }
-
-        // 2. Vytvoøíme nové
-        foreach (ItemData item in currentShopkeeper.itemsForSale)
-        {
-            GameObject obj = Instantiate(shopItemPrefab, itemsContainer);
-
-            // Nastavíme vzhled (pøedpokládáme, že prefab má skript ShopItemSlot)
-            ShopItemSlot slot = obj.GetComponent<ShopItemSlot>();
-            if (slot != null)
-            {
-                slot.Setup(item, this);
-            }
-        }
-    }
-
-    // Tuto metodu zavolá tlaèítko u zboží
     public void TryBuyItem(ItemData item)
     {
         if (PlayerStats.instance == null || InventoryManager.instance == null) return;
 
-        // 1. Máme dost penìz?
         if (PlayerStats.instance.currentCoins >= item.price)
         {
-            // 2. Je místo v inventáøi?
             if (InventoryManager.instance.AddItem(item, 1))
             {
-                // Úspìch!
                 PlayerStats.instance.currentCoins -= item.price;
-                Debug.Log($"Koupeno: {item.itemName}");
-
                 UpdateCoinsText();
-                // Pøehrát zvuk cinknutí?
+                Debug.Log($"Koupeno: {item.itemName}");
             }
             else
             {
@@ -138,16 +162,25 @@ public class ShopUI : MonoBehaviour
             Debug.Log("Nemáš dost penìz!");
         }
     }
-    public void TrySellItem(ItemData item, int slotIndex)
+
+    void UpdateCoinsText()
     {
-        // TOTO JE POJISTKA: Prodávat jde jen, když je okno otevøené
-        if (!shopPanel.activeSelf) return;
+        if (PlayerStats.instance != null && playerCoinsText != null)
+        {
+            playerCoinsText.text = $"Coins: {PlayerStats.instance.currentCoins}";
+        }
+    }
 
-        int sellPrice = Mathf.Max(1, item.price / 2);
-        if (PlayerStats.instance != null) PlayerStats.instance.currentCoins += sellPrice;
-        if (InventoryManager.instance != null) InventoryManager.instance.RemoveItem(slotIndex, 1);
+    void GenerateShopItems()
+    {
+        foreach (Transform child in itemsContainer) Destroy(child.gameObject);
+        if (currentShopkeeper == null) return;
 
-        UpdateCoinsText();
-        Debug.Log($"Prodáno: {item.itemName}");
+        foreach (ItemData item in currentShopkeeper.itemsForSale)
+        {
+            GameObject obj = Instantiate(shopItemPrefab, itemsContainer);
+            ShopItemSlot slot = obj.GetComponent<ShopItemSlot>();
+            if (slot != null) slot.Setup(item, this);
+        }
     }
 }

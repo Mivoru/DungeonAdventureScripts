@@ -18,6 +18,9 @@ public class InventoryManager : MonoBehaviour
     public RectTransform inventoryRect; // Pøetáhni sem InventoryPanel (musí mít RectTransform)
     private Vector2 defaultPosition;    // Tady si uloíme, kde byl pùvodnì (uprostøed)
 
+    [Header("Starting Items")]
+    public List<ItemData> startingItems;
+
     [System.Serializable]
     public class SlotData
     {
@@ -34,40 +37,43 @@ public class InventoryManager : MonoBehaviour
 
     void Awake()
     {
-        // --- OPRAVA SINGLETONU ---
-        // Pokud u instance existuje a není to tato, znièíme tento duplikát
-        if (instance != null && instance != this)
-        {
-            Destroy(gameObject);
-            return;
-        }
-
-        // Pokud neexistuje, nastavíme se jako hlavní a pøeijeme naèítání
+        // 1. Singleton (jako døív)
+        if (instance != null && instance != this) { Destroy(gameObject); return; }
         instance = this;
-        DontDestroyOnLoad(gameObject.transform.root.gameObject); // Zajistíme, e pøeije celı HUD
-        // -------------------------
+        DontDestroyOnLoad(gameObject.transform.root.gameObject);
 
-        // Inicializace dat (pouze pokud jsme ten hlavní)
+        // 2. Inicializace Dat
         slots = new SlotData[inventorySize];
         for (int i = 0; i < inventorySize; i++) slots[i] = new SlotData();
+
+        // 3. --- PØESUNUTO ZE START DO AWAKE ---
+        // Najdeme panel a RectTransform HNED TEÏ, aby byl pøipravenı pro ShopUI
+        if (inventoryPanel == null)
+        {
+            Transform p = transform.Find("InventoryPanel");
+            if (p != null) inventoryPanel = p.gameObject;
+        }
+
+        if (inventoryPanel != null)
+        {
+            inventoryRect = inventoryPanel.GetComponent<RectTransform>();
+            if (inventoryRect != null) defaultPosition = inventoryRect.anchoredPosition;
+
+            // Necháme ho zapnutı/vypnutı? Radìji ho na zaèátku vypneme.
+            inventoryPanel.SetActive(false);
+        }
     }
 
     void Start()
     {
-        // Pokud panel není pøiøazenı, zkusíme ho najít (pojistka)
-        if (inventoryPanel == null)
-        {
-            Transform panelTrans = transform.Find("InventoryPanel"); // Uprav cestu dle hierarchie
-            if (panelTrans != null) inventoryPanel = panelTrans.gameObject;
-        }
-
-        if (inventoryPanel != null) inventoryPanel.SetActive(false);
-        
-
+        // Ve Startu u necháme jen vytváøení slotù (to nespìchá)
         CreateUISlots();
-        if (inventoryRect != null)
+        if (IsInventoryEmpty() && startingItems != null)
         {
-            defaultPosition = inventoryRect.anchoredPosition;
+            foreach (var item in startingItems)
+            {
+                if (item != null) AddItem(item, 1);
+            }
         }
     }
 
@@ -90,12 +96,20 @@ public class InventoryManager : MonoBehaviour
         }
         UpdateUI();
     }
+    bool IsInventoryEmpty()
+    {
+        foreach (var slot in slots)
+        {
+            if (slot.item != null) return false;
+        }
+        return true;
+    }
 
     public void OnToggleInventory(InputAction.CallbackContext context)
     {
         if (context.performed)
         {
-            Debug.LogError(" BYLA ZAVOLÁNA METODA ONTOGGLEINVENTORY! (To se na E nesmí stát)");
+            
             isOpen = !isOpen;
             if (inventoryPanel != null)
             {
@@ -296,5 +310,55 @@ public class InventoryManager : MonoBehaviour
         inventoryPanel.SetActive(false);
         // Reset pozice pro jistotu, aby pøíštì nebyl šikmo, kdy ho otevøeš klávesou I
         if (inventoryRect != null) inventoryRect.anchoredPosition = defaultPosition;
+    }
+    public void UseItem(int slotIndex)
+    {
+        if (slots[slotIndex].item == null) return;
+
+        ItemData item = slots[slotIndex].item;
+
+        // Rozhodování podle typu
+        switch (item.itemType)
+        {
+            case ItemType.Consumable:
+                ConsumeItem(item, slotIndex);
+                break;
+
+            case ItemType.Weapon:
+            case ItemType.Tool:
+                EquipItem(item);
+                break;
+
+            case ItemType.Material:
+                Debug.Log("S tímto pøedmìtem nejde nic dìlat.");
+                break;
+        }
+    }
+
+    void ConsumeItem(ItemData item, int slotIndex)
+    {
+        if (PlayerStats.instance != null)
+        {
+            // Vyléèíme hráèe (ValueAmount = Heal)
+            PlayerStats.instance.Heal(item.valueAmount);
+
+            // Odebereme 1 kus
+            RemoveItem(slotIndex, 1);
+            Debug.Log($"Pouit: {item.itemName}. Vyléèeno: {item.valueAmount}");
+        }
+    }
+
+    void EquipItem(ItemData item)
+    {
+        // Øekneme WeaponManageru, a to nasadí
+        GameObject player = GameObject.FindGameObjectWithTag("Player");
+        if (player != null)
+        {
+            WeaponManager wm = player.GetComponentInChildren<WeaponManager>(); // Nebo GetComponent
+            if (wm != null)
+            {
+                wm.EquipWeaponByID(item.weaponID);
+            }
+        }
     }
 }

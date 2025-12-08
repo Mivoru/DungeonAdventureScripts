@@ -14,45 +14,54 @@ public class DungeonGenerator : MonoBehaviour
     public int numberOfRooms = 20;
 
     [Header("Corridor Settings")]
-    public int minCorridorWidth = 3; // Doporuèuji liché èíslo
+    public int minCorridorWidth = 3;
     public int maxCorridorWidth = 5;
     public int minCorridorLength = 8;
     public int maxCorridorLength = 16;
 
     [Header("Wall Height Logic")]
-    public int verticalPadding = 6; // Místo pro vysoké zdi pøi generování
+    public int verticalPadding = 6;
 
     [Header("Boss Room")]
     public Vector2Int bossRoomSize = new Vector2Int(50, 50);
     public int bossLevel = 10;
 
-    [Header("High Walls Settings (Vzhled)")]
-    public Tilemap WallDecorMap; // Vrstva pro dekorace (Order 10)
-    public TileBase wallMid;     // WallBase2 (Støed)
-    public TileBase wallHigh;    // WallBase3 (Vršek)
-    public TileBase wallRoof;    // WallBTop (Støecha)
+    [Header("High Walls Settings")]
+    public Tilemap WallDecorMap;
+    public TileBase wallMid;
+    public TileBase wallHigh;
+    public TileBase wallRoof;
 
     [Header("Shadow Settings")]
     public Tilemap ShadowMap;
-    public TileBase floorShadow; // Sem dej ten Rule Tile
-    public TileBase wallShadow;  // Sem dej ten plný èerný ètverec (Full Shadow)
+    public TileBase floorShadow;
+    public TileBase wallShadow;
 
-    [Header("Spawn Room (Start)")]
-    public Vector2Int spawnRoomSize = new Vector2Int(10, 10); // Fixní velikost 10x10
+    [Header("Spawn Room")]
+    public Vector2Int spawnRoomSize = new Vector2Int(10, 10);
 
     [Header("Boss Room Setup")]
     public GameObject bossRoomControllerPrefab;
 
-    [Header("Exits")]
-    public GameObject portalPrefab;
+    // --- PØIDÁNO: KONFIGURACE PRO RUDY ---
+    [System.Serializable]
+    public class ResourceConfig
+    {
+        public string name = "Ore";
+        public GameObject prefab;
+        public int minCount = 5;
+        public int maxCount = 10;
+    }
 
-    // --- SKUPINY NEPØÁTEL ---
+    [Header("Resources Generation")]
+    public List<ResourceConfig> resourcesToSpawn;
+    // --------------------------------------
+
     [System.Serializable]
     public class EnemyGroup
     {
         public string groupName = "Patrol";
         public List<GameObject> enemiesInGroup;
-        [Header("Level Range")]
         public int minLevel = 1;
         public int maxLevel = 3;
     }
@@ -62,14 +71,12 @@ public class DungeonGenerator : MonoBehaviour
     public int totalGroupsToSpawn = 5;
     public float safeZoneRadius = 5f;
 
-    // --- SOLO NEPØÁTELÉ ---
     [System.Serializable]
     public class SoloEnemyConfig
     {
         public string name = "Enemy Type";
         public GameObject prefab;
         public int count;
-        [Header("Level Range")]
         public int minLevel = 1;
         public int maxLevel = 3;
     }
@@ -77,13 +84,13 @@ public class DungeonGenerator : MonoBehaviour
     [Header("Solo Spawning Settings")]
     public List<SoloEnemyConfig> soloEnemiesToSpawn;
 
-    [HideInInspector] public int enemyCount = 0; // Legacy promìnná
+    [HideInInspector] public int enemyCount = 0;
 
     [Header("References")]
     public Tilemap Ground;
     public Tilemap Walls;
     public TileBase FloorTile;
-    public TileBase WallTile; // WallBase1 (Spodek s kolizí)
+    public TileBase WallTile;
     public GameObject navMeshObject;
 
     [System.Serializable]
@@ -138,6 +145,7 @@ public class DungeonGenerator : MonoBehaviour
         totalGroupsToSpawn = data.totalGroups;
 
         bossLevel = data.bossLevel;
+        resourcesToSpawn = data.resources;
     }
 
     void GenerateDungeon()
@@ -150,7 +158,7 @@ public class DungeonGenerator : MonoBehaviour
         rooms.Clear();
 
         foreach (var enemy in GameObject.FindGameObjectsWithTag("Enemy")) Destroy(enemy);
-
+        foreach (var res in GameObject.FindGameObjectsWithTag("Resource")) Destroy(res); // Pokud mají tag Resource
         // 2. Startovní místnost
         CreateRoom(Vector2Int.zero, UnityEngine.Random.Range(minRoomSize, maxRoomSize), UnityEngine.Random.Range(minRoomSize, maxRoomSize));
 
@@ -526,9 +534,11 @@ public class DungeonGenerator : MonoBehaviour
             if (triang.vertices.Length > 0)
             {
                 Debug.Log($" NavMesh OK! Vertices: {triang.vertices.Length}");
+                foreach (var node in GameObject.FindObjectsOfType<ResourceNode>()) Destroy(node.gameObject);
                 MovePlayerToStart();
                 SpawnEnemyGroups();
                 SpawnSoloEnemies();
+                SpawnResources();
             }
             else
             {
@@ -603,6 +613,42 @@ public class DungeonGenerator : MonoBehaviour
             }
         }
     }
+
+    void SpawnResources()
+    {
+        if (resourcesToSpawn == null) return;
+
+        foreach (var config in resourcesToSpawn)
+        {
+            if (config.prefab == null) continue;
+
+            int count = UnityEngine.Random.Range(config.minCount, config.maxCount + 1);
+            int spawned = 0;
+            int attempts = 0;
+
+            while (spawned < count && attempts < 500)
+            {
+                attempts++;
+                // Vybereme náhodnou místnost (kromì startu a bosse)
+                if (rooms.Count <= 2) break;
+                Room r = rooms[UnityEngine.Random.Range(1, rooms.Count - 1)];
+
+                // Náhodná pozice
+                float randomX = UnityEngine.Random.Range(r.bounds.xMin + 2, r.bounds.xMax - 2);
+                float randomY = UnityEngine.Random.Range(r.bounds.yMin + 2, r.bounds.yMax - 2);
+                Vector3 spawnPos = new Vector3(randomX, randomY, 0);
+
+                // Kontrola kolize (aby to nebylo ve zdi nebo v jiné rudì)
+                // Používáme malý kruh
+                if (Physics2D.OverlapCircle(spawnPos, 0.5f) == null)
+                {
+                    Instantiate(config.prefab, spawnPos, Quaternion.identity);
+                    spawned++;
+                }
+            }
+        }
+    }
+
     void MovePlayerToStart()
     {
         GameObject player = GameObject.FindGameObjectWithTag("Player");

@@ -35,7 +35,7 @@ public class PlayerStats : CharacterStats
     public GameObject deathScreenPrefab;
 
     [Header("Economy")]
-    public int currentCoins = 0;
+    public int currentCoins = 100;
 
     // --- SNAPSHOT DATA (Pro návrat po smrti) ---
     private int savedLevel;

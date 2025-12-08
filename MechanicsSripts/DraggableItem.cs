@@ -10,7 +10,6 @@ public class DraggableItem : MonoBehaviour, IBeginDragHandler, IDragHandler, IEn
     private Image image;
     private CanvasGroup canvasGroup;
 
-    // STATICKÁ PROMÌNNÁ: Pamatuje si, co právì držíš myší
     public static DraggableItem itemBeingDragged;
 
     void Awake()
@@ -24,14 +23,21 @@ public class DraggableItem : MonoBehaviour, IBeginDragHandler, IDragHandler, IEn
     {
         if (image.sprite == null || !image.enabled) return;
 
-        // Uložíme si referenci na sebe
         itemBeingDragged = this;
-
         parentSlot = GetComponentInParent<InventorySlot>();
         originalParent = transform.parent;
 
-        // Pøipojíme se k rootu (InventoryManageru), aby byla ikona nad vším
-        transform.SetParent(InventoryManager.instance.transform);
+        // Pøesuneme nad všechno ostatní (do koøene InventoryManageru nebo HUDu)
+        // Používáme root.parent nebo pøímo transform InventoryManageru
+        if (InventoryManager.instance != null)
+        {
+            transform.SetParent(InventoryManager.instance.transform);
+        }
+        else
+        {
+            // Fallback, kdyby manager nebyl (což by nemìlo nastat)
+            transform.SetParent(transform.root);
+        }
 
         canvasGroup.blocksRaycasts = false;
     }
@@ -39,47 +45,49 @@ public class DraggableItem : MonoBehaviour, IBeginDragHandler, IDragHandler, IEn
     public void OnDrag(PointerEventData eventData)
     {
         if (image.sprite == null || !image.enabled) return;
-        transform.position = Input.mousePosition;
+
+        // --- OPRAVA CHYBY ---
+        // Místo Input.mousePosition použijeme pozici z eventu (funguje pro myš i dotyk)
+        transform.position = eventData.position;
     }
 
     public void OnEndDrag(PointerEventData eventData)
     {
-        // POJISTKA: Pokud byl objekt znièen v OnDrop (pøi swapu), ukonèíme funkci
+        // Pojistka, kdyby objekt zmizel bìhem dragu
         if (this == null || gameObject == null) return;
-
         if (image.sprite == null || !image.enabled) return;
 
-        // ... zbytek tvého kódu (FinishDrag / DropItem) ...
+        itemBeingDragged = null;
 
-        // Tady by mìlo být volání FinishDrag() nebo logika pro návrat
-        // Pokud jsi to tam mìl, nech to tam.
-        // Dùležité je jen pøidat tu kontrolu na zaèátek.
+        // Pokud pouštíme nad UI (napø. jiný slot), OnDrop v tom slotu to vyøeší.
+        // Pokud pouštíme MIMO UI (do svìta), vyhodíme item.
+        if (eventData.pointerEnter == null || eventData.pointerEnter.layer != LayerMask.NameToLayer("UI"))
+        {
+            // Vyhození itemu
+            if (InventoryManager.instance != null && parentSlot != null)
+            {
+                InventoryManager.instance.DropItem(parentSlot.slotIndex);
+            }
+        }
 
-        // Drop logic (vyhození na zem) - jen pokud stále existujeme
-        if (!eventData.pointerEnter || eventData.pointerEnter.layer != LayerMask.NameToLayer("UI"))
-        {
-            InventoryManager.instance.DropItem(parentSlot.slotIndex);
-        }
-        else
-        {
-            // Pokud jsme pustili nad UI, ale ne nad slotem, vrátíme se
-            FinishDrag();
-        }
+        // Pokud jsme item "nepustili" úspìšnì jinam (tzn. nebyl znièen/pøesunut), vrátíme ho domù
+        FinishDrag();
     }
 
     public void FinishDrag()
     {
-        // Pojistka proti chybám
         if (this == null) return;
 
-        // Zapneme znovu klikání
-        if (canvasGroup != null) canvasGroup.blocksRaycasts = true;
+        canvasGroup.blocksRaycasts = true;
 
-        // Vrátíme domù
-        transform.SetParent(originalParent);
-        transform.localPosition = Vector3.zero;
+        // Pokud máme rodièe (slot), vrátíme se tam.
+        // (Pokud jsme byli vyhozeni, slot už je prázdný, ale tento objekt se stejnì asi resetuje)
+        if (originalParent != null)
+        {
+            transform.SetParent(originalParent);
+            transform.localPosition = Vector3.zero;
+        }
 
-        // Vyèistíme statickou referenci
         if (itemBeingDragged == this) itemBeingDragged = null;
     }
 }

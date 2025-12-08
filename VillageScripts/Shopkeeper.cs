@@ -28,7 +28,6 @@ public class Shopkeeper : MonoBehaviour
         {
             shopUI = FindFirstObjectByType<ShopUI>(FindObjectsInactive.Include);
         }
-
         if (shopUI != null)
         {
             shopUI.ToggleShop(this);

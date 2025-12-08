@@ -4,63 +4,68 @@ using UnityEngine.InputSystem;
 public class WeaponManager : MonoBehaviour
 {
     [Header("Weapons References")]
-    public GameObject swordObject; // Celý objekt SwordHolder
-    public GameObject bowObject;   // Celý objekt BowHolder (s FirePointem)
+    public GameObject swordObject;
+    public GameObject bowObject;
+    public GameObject pickaxeObject; // NOVÉ: Krumpáè
 
     [Header("Weapon Scripts")]
-    public SwordAttack swordScript; // Skript na meèi
-    public BowController bowScript; // Skript na luku
+    public SwordAttack swordScript;
+    public BowController bowScript;
+    public MiningTool pickaxeScript; // NOVÉ: Skript pro tìžbu
 
-    // 1 = Meè, 2 = Luk
-    private int currentWeapon = 1;
+    // Aktuálnì vybraná zbraò (String ID)
+    private string currentWeaponID = "Sword";
 
     void Start()
     {
-        // Na zaèátku zapneme meè a vypneme luk
-        EquipSword();
+        EquipWeaponByID("Sword"); // Defaultní zbraò
     }
 
-    // === PØEPÍNÁNÍ ZBRANÍ (Voláno z Input Systemu) ===
-
-    public void OnSwitch1(InputAction.CallbackContext context)
+    // Tuto metodu volá InventoryManager
+    public void EquipWeaponByID(string id)
     {
-        if (context.performed) EquipSword();
+        // Vypneme všechno
+        if (swordObject) swordObject.SetActive(false);
+        if (bowObject) bowObject.SetActive(false);
+        if (pickaxeObject) pickaxeObject.SetActive(false);
+
+        currentWeaponID = id;
+
+        // Zapneme to správné
+        switch (id)
+        {
+            case "Sword":
+                if (swordObject) swordObject.SetActive(true);
+                break;
+            case "Bow":
+                if (bowObject) bowObject.SetActive(true);
+                break;
+            case "Pickaxe":
+                if (pickaxeObject) pickaxeObject.SetActive(true);
+                break;
+            default:
+                Debug.LogWarning($"Neznámé ID zbranì: {id}");
+                break;
+        }
+        Debug.Log($"Vybaveno: {id}");
     }
 
-    public void OnSwitch2(InputAction.CallbackContext context)
-    {
-        if (context.performed) EquipBow();
-    }
-
-    void EquipSword()
-    {
-        currentWeapon = 1;
-        swordObject.SetActive(true);  // Zviditelnit meè
-        bowObject.SetActive(false);   // Skrýt luk
-        Debug.Log("Vybaven: MEÈ");
-    }
-
-    void EquipBow()
-    {
-        currentWeapon = 2;
-        swordObject.SetActive(false); // Skrýt meè
-        bowObject.SetActive(true);    // Zviditelnit luk
-        Debug.Log("Vybaven: LUK");
-    }
-
-    // === HLAVNÍ ÚTOK (Voláno tlaèítkem myši) ===
-
-    // Tuto funkci propojíme v Player Inputu místo pøímých zbraní!
     public void OnMainAttack(InputAction.CallbackContext context)
     {
-        // Manažer zjistí, co držíš, a pošle signál správnému skriptu
-        if (currentWeapon == 1)
+        // Pøesmìrujeme útok na správný skript
+        switch (currentWeaponID)
         {
-            swordScript.OnAttack(context);
-        }
-        else if (currentWeapon == 2)
-        {
-            bowScript.OnAttack(context);
+            case "Sword":
+                if (swordScript) swordScript.OnAttack(context);
+                break;
+            case "Bow":
+                if (bowScript) bowScript.OnAttack(context);
+                break;
+            case "Pickaxe":
+                if (pickaxeScript) pickaxeScript.OnAttack(context);
+                break;
         }
     }
+
+    // (Staré metody OnSwitch1/2 mùžeš smazat, nebo nechat pro debug)
 }
