@@ -37,34 +37,30 @@ public class ResourceNode : MonoBehaviour
 
     void BreakNode()
     {
-        // --- DIAGNOSTIKA CHYB ---
-        if (dropPrefab == null)
+        // Kontrola chyb
+        if (dropPrefab == null || itemToDrop == null)
         {
-            Debug.LogError($"CHYBA: Ruda '{name}' nemá pøiøazený 'Drop Prefab' (Pytlík) v Inspectoru!");
+            Debug.LogError($"CHYBA: Ruda '{name}' nemá nastavený Drop Prefab nebo Item Data!");
             Destroy(gameObject);
             return;
         }
 
-        if (itemToDrop == null)
-        {
-            Debug.LogError($"CHYBA: Ruda '{name}' nemá pøiøazený 'Item To Drop' (ItemData) v Inspectoru!");
-            Destroy(gameObject);
-            return;
-        }
-        // -----------------------
+        // --- SPAWN LOOTU (CYKLUS) ---
+        // Místo jednoho balíku jich vyhodíme tolik, kolik je dropAmount
+        // (Pokud bys mìl dropAmount 100, radìji to omez, ale pro rudy (1-5) je to super)
 
-        // Vytvoøení lootu
-        GameObject loot = Instantiate(dropPrefab, transform.position, Quaternion.identity);
-        LootPickup pickup = loot.GetComponent<LootPickup>();
+        for (int i = 0; i < dropAmount; i++)
+        {
+            // Spawneme ho pøesnì na pozici kamene (nebo s malinkým posunem)
+            // O ten hlavní "rozptyl" (výskok) se postará skript LootPickup sám ve svém Startu
+            GameObject loot = Instantiate(dropPrefab, transform.position, Quaternion.identity);
 
-        if (pickup != null)
-        {
-            pickup.SetItem(itemToDrop, dropAmount);
-            Debug.Log($"Vytìženo: {itemToDrop.itemName} x{dropAmount}");
-        }
-        else
-        {
-            Debug.LogError("CHYBA: Prefab lootu nemá skript 'LootPickup'!");
+            LootPickup pickup = loot.GetComponent<LootPickup>();
+            if (pickup != null)
+            {
+                // Každý kousek pøedstavuje 1 surovinu
+                pickup.SetItem(itemToDrop, 1);
+            }
         }
 
         Destroy(gameObject);

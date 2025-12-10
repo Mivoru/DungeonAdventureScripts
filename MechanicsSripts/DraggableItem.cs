@@ -7,16 +7,21 @@ public class DraggableItem : MonoBehaviour, IBeginDragHandler, IDragHandler, IEn
     [HideInInspector] public Transform originalParent;
     [HideInInspector] public InventorySlot parentSlot;
 
+    // --- NOVÉ PROMÌNNÉ PRO PEC ---
+    public bool isFromFurnace = false;
+    public string furnaceSlotType;
+    public FurnaceInteractable furnaceSource;
+    // -----------------------------
+
     private Image image;
     private CanvasGroup canvasGroup;
-
     public static DraggableItem itemBeingDragged;
 
     void Awake()
     {
         image = GetComponent<Image>();
         canvasGroup = GetComponent<CanvasGroup>();
-        if (canvasGroup == null) canvasGroup = gameObject.AddComponent<CanvasGroup>();
+        if (canvasGroup == null && !isFromFurnace) canvasGroup = gameObject.AddComponent<CanvasGroup>();
     }
 
     public void OnBeginDrag(PointerEventData eventData)
@@ -77,17 +82,14 @@ public class DraggableItem : MonoBehaviour, IBeginDragHandler, IDragHandler, IEn
     public void FinishDrag()
     {
         if (this == null) return;
+        if (isFromFurnace) return; // Pec si to øeší jinak (Destroy)
 
-        canvasGroup.blocksRaycasts = true;
-
-        // Pokud máme rodièe (slot), vrátíme se tam.
-        // (Pokud jsme byli vyhozeni, slot už je prázdný, ale tento objekt se stejnì asi resetuje)
+        if (canvasGroup) canvasGroup.blocksRaycasts = true;
         if (originalParent != null)
         {
             transform.SetParent(originalParent);
             transform.localPosition = Vector3.zero;
         }
-
         if (itemBeingDragged == this) itemBeingDragged = null;
     }
 }

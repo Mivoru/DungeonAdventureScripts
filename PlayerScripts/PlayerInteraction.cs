@@ -69,6 +69,12 @@ public class PlayerInteraction : MonoBehaviour
                     shop.Interact();
                     return;
                 }
+                FurnaceInteractable furnace = hit.GetComponent<FurnaceInteractable>();
+                if (furnace != null)
+                {
+                    furnace.Interact(); // Zavolá OpenFurnace v UI
+                    return;
+                }
             }
         }
     }

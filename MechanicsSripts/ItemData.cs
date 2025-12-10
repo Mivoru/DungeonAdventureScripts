@@ -28,4 +28,7 @@ public class ItemData : ScriptableObject
 
     [Header("Economy")]
     public int price = 10;
+
+    [Header("Crafting / Smelting")]
+    public float burnDuration = 0f;
 }
