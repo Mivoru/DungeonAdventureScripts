@@ -73,38 +73,48 @@ public class InventorySlot : MonoBehaviour, IDropHandler, IPointerClickHandler
                 // 2. Z PECE (Nové)
                 else
                 {
-                    // Zjistíme, co taháme
                     var furnace = droppedItem.furnaceSource;
                     ItemData itemToTake = null;
                     int amountToTake = 0;
 
-                    if (droppedItem.furnaceSlotType == "Output")
+                    if (droppedItem.furnaceSlotType == "Output") { itemToTake = furnace.outputItem; amountToTake = furnace.outputAmount; }
+                    else if (droppedItem.furnaceSlotType == "Input") { itemToTake = furnace.inputItem; amountToTake = furnace.inputAmount; }
+                    else if (droppedItem.furnaceSlotType == "Fuel") { itemToTake = furnace.fuelItem; amountToTake = furnace.fuelAmount; }
+
+                    // ZKUSÍME TO DÁT PØÍMO DO TOHOTO SLOTU
+                    bool success = false;
+                    var mySlot = InventoryManager.instance.slots[slotIndex];
+
+                    // A) Slot je prázdný -> Vložíme
+                    if (mySlot.item == null)
                     {
-                        itemToTake = furnace.outputItem;
-                        amountToTake = furnace.outputAmount;
+                        mySlot.item = itemToTake;
+                        mySlot.amount = amountToTake;
+                        success = true;
                     }
-                    else if (droppedItem.furnaceSlotType == "Input")
+                    // B) Slot má stejný item (a je stackable) -> Pøièteme
+                    else if (mySlot.item == itemToTake && itemToTake.isStackable && mySlot.amount < itemToTake.maxStackSize)
                     {
-                        itemToTake = furnace.inputItem;
-                        amountToTake = furnace.inputAmount;
+                        // (Zjednodušenì pøièteme vše, pro pøesnost by se mìl øešit limit stacku)
+                        mySlot.amount += amountToTake;
+                        success = true;
                     }
-                    else if (droppedItem.furnaceSlotType == "Fuel")
+                    // C) Slot je plný/jiný -> Použijeme klasický AddItem (najde jiné místo)
+                    else
                     {
-                        itemToTake = furnace.fuelItem;
-                        amountToTake = furnace.fuelAmount;
+                        success = InventoryManager.instance.AddItem(itemToTake, amountToTake);
                     }
 
-                    // Pøidáme do tohoto slotu v inventáøi
-                    // (Zjednodušenì použijeme AddItem, který najde místo, ale my chceme PØESNÌ TENTO slot)
-                    // Ale pro jednoduchost:
-                    if (InventoryManager.instance.AddItem(itemToTake, amountToTake))
+                    if (success)
                     {
-                        // Pokud se to povedlo pøidat, vymažeme to z pece
+                        // Vymažeme z pece
                         if (droppedItem.furnaceSlotType == "Output") { furnace.outputItem = null; furnace.outputAmount = 0; }
                         else if (droppedItem.furnaceSlotType == "Input") { furnace.inputItem = null; furnace.inputAmount = 0; }
                         else if (droppedItem.furnaceSlotType == "Fuel") { furnace.fuelItem = null; furnace.fuelAmount = 0; }
 
                         FurnaceUI.instance.UpdateVisuals();
+                        // Musíme aktualizovat UI inventáøe, protože jsme sáhli pøímo do dat slotù
+                        InventoryManager.instance.SendMessage("UpdateUI");
                     }
                 }
             }

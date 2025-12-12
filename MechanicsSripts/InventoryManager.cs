@@ -336,4 +336,39 @@ public class InventoryManager : MonoBehaviour
             if (wm != null) wm.EquipWeaponByID(item.weaponID);
         }
     }
+    // --- CRAFTING HELPERS ---
+
+    // Zjistí celkový poèet tohoto itemu v celém inventáøi
+    public int GetItemCount(ItemData item)
+    {
+        int count = 0;
+        foreach (var slot in slots)
+        {
+            if (slot.item == item) count += slot.amount;
+        }
+        return count;
+    }
+
+    // Odebere konkrétní poèet (postupnì z více stackù)
+    public void RemoveItemByName(ItemData item, int amountToRemove)
+    {
+        for (int i = 0; i < slots.Length; i++)
+        {
+            if (slots[i].item == item)
+            {
+                int take = Mathf.Min(slots[i].amount, amountToRemove);
+                slots[i].amount -= take;
+                amountToRemove -= take;
+
+                if (slots[i].amount <= 0)
+                {
+                    slots[i].item = null;
+                    slots[i].amount = 0;
+                }
+
+                if (amountToRemove <= 0) break;
+            }
+        }
+        UpdateUI();
+    }
 }

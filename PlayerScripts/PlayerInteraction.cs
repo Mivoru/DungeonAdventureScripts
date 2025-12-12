@@ -75,6 +75,13 @@ public class PlayerInteraction : MonoBehaviour
                     furnace.Interact(); // Zavolá OpenFurnace v UI
                     return;
                 }
+                // --- F. CRAFTING TABLE (NOVÉ) ---
+                CraftingTableInteractable table = hit.GetComponent<CraftingTableInteractable>();
+                if (table != null)
+                {
+                    table.Interact();
+                    return;
+                }
             }
         }
     }
