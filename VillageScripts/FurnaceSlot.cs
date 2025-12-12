@@ -3,6 +3,7 @@ using UnityEngine.EventSystems;
 using UnityEngine.UI;
 
 
+
 public class FurnaceSlot : MonoBehaviour, IDropHandler, IBeginDragHandler, IDragHandler, IEndDragHandler
 {
     [Header("Slot Type")]
@@ -38,32 +39,33 @@ public class FurnaceSlot : MonoBehaviour, IDropHandler, IBeginDragHandler, IDrag
     // --- 2. ZAÈÁTEK TAŽENÍ (Z PECE VEN) ---
     public void OnBeginDrag(PointerEventData eventData)
     {
-        // Kontrola, jestli je pec otevøená a má data
+        // 1. Získáme data z pece
         if (FurnaceUI.instance == null || FurnaceUI.instance.currentFurnace == null) return;
 
         ItemData item = null;
         int amount = 0;
         var furnace = FurnaceUI.instance.currentFurnace;
 
-        // Zjistíme, co je v tomto slotu
         if (slotType == "Input") { item = furnace.inputItem; amount = furnace.inputAmount; }
         else if (slotType == "Fuel") { item = furnace.fuelItem; amount = furnace.fuelAmount; }
         else if (slotType == "Output") { item = furnace.outputItem; amount = furnace.outputAmount; }
 
-        // Pokud je slot prázdný, nic netaháme
         if (item == null || amount <= 0) return;
 
-        // Vytvoøíme doèasnou ikonku (Ghost Icon)
+        // 2. Vytvoøíme DUCHA
         draggingObject = new GameObject("DraggingFurnaceIcon");
-        draggingObject.transform.SetParent(FurnaceUI.instance.transform.root); // Dáme to úplnì navrch (Canvas)
-        draggingObject.transform.SetAsLastSibling();
+        draggingObject.transform.SetParent(FurnaceUI.instance.transform.root); // Canvas root
+        draggingObject.transform.SetAsLastSibling(); // Úplnì navrch
+
+        // Nastavíme pozici na myš
+        draggingObject.transform.position = eventData.position;
 
         // Pøidáme obrázek
         Image img = draggingObject.AddComponent<Image>();
         img.sprite = item.icon;
-        img.raycastTarget = false; // Aby neblokovala myš
+        img.raycastTarget = false; // <--- DUCH MUSÍ BÝT PRÙHLEDNÝ PRO MYŠ
 
-        // Pøidáme skript DraggableItem, aby to InventorySlot poznal
+        // Pøidáme DraggableItem (aby InventorySlot poznal, že to je item)
         DraggableItem dragScript = draggingObject.AddComponent<DraggableItem>();
         dragScript.isFromFurnace = true;
         dragScript.furnaceSlotType = slotType;
@@ -72,7 +74,6 @@ public class FurnaceSlot : MonoBehaviour, IDropHandler, IBeginDragHandler, IDrag
         // Nastavíme globální referenci
         DraggableItem.itemBeingDragged = dragScript;
     }
-
     // --- 3. PRÙBÌH TAŽENÍ ---
     public void OnDrag(PointerEventData eventData)
     {

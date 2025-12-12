@@ -25,7 +25,6 @@ public class FurnaceInteractable : MonoBehaviour
 
     void Start()
     {
-        // Najdeme UI (bezpeènìji pøes Singleton, pokud existuje, nebo Find)
         if (FurnaceUI.instance != null) ui = FurnaceUI.instance;
         else ui = FindFirstObjectByType<FurnaceUI>(FindObjectsInactive.Include);
     }
@@ -36,27 +35,25 @@ public class FurnaceInteractable : MonoBehaviour
         if (ui != null && ui.gameObject.activeSelf && ui.currentFurnace == this)
         {
             GameObject player = GameObject.FindGameObjectWithTag("Player");
-            if (player != null)
+            if (player != null && Vector2.Distance(transform.position, player.transform.position) > interactionRange)
             {
-                if (Vector2.Distance(transform.position, player.transform.position) > interactionRange)
-                {
-                    ui.CloseFurnace();
-                }
+                ui.CloseFurnace();
             }
         }
 
         // 2. Logika Peèení
-        if (isCooking && inputItem != null)
+        if (isCooking)
         {
-            // --- KONTROLA VÝSTUPU (NOVÉ) ---
-            // Zjistíme, co má vzniknout
-            CraftingRecipe recipe = RecipeManager.instance.GetFurnaceRecipe(inputItem);
+            CraftingRecipe recipe = null;
+            if (inputItem != null) recipe = RecipeManager.instance.GetFurnaceRecipe(inputItem);
 
-            // Pokud recept neexistuje NEBO je výstup plný/jiný -> STOP
-            if (recipe == null || !CanOutputResult(recipe))
+            // ZMÌNA: Kontrola množství (inputAmount < recipe cost)
+            int cost = (recipe != null && recipe.ingredients.Count > 0) ? recipe.ingredients[0].amount : 1;
+
+            if (inputItem == null || recipe == null || !CanOutputResult(recipe) || inputAmount < cost)
             {
-                cookTimer = 0; // Reset progressu (nebo ho nech, ale nepeè)
-                // isCooking = false; // Mùžeme vypnout, nebo nechat hoøet palivo naprázdno (tvá volba)
+                cookTimer = 0;
+                isCooking = false; // Zastavit, pokud došly suroviny (nebo jich je málo)
                 return;
             }
 
@@ -75,57 +72,53 @@ public class FurnaceInteractable : MonoBehaviour
                 }
                 else
                 {
-                    isCooking = false; // Došlo palivo -> zhasnout
+                    isCooking = false;
                     return;
                 }
             }
 
-            // Peèení (když máme palivo i místo na výstupu)
+            // Peèení
             cookTimer += Time.deltaTime;
-
             if (cookTimer >= recipe.cookTime)
             {
                 SmeltItem(recipe);
             }
         }
-        else
-        {
-            // Když se nepeèe, resetujeme timer
-            cookTimer = 0;
-            // Palivo mùže dohoøívat
-            if (currentBurnTime > 0) currentBurnTime -= Time.deltaTime;
-        }
 
-        // Aktualizace UI
         if (ui != null && ui.currentFurnace == this && ui.gameObject.activeSelf)
         {
             ui.UpdateVisuals();
         }
     }
 
-    // --- NOVÁ METODA PRO KONTROLU VÝSTUPU ---
     bool CanOutputResult(CraftingRecipe recipe)
     {
-        if (outputItem == null) return true; // Je tam prázdno -> OK
-        if (outputItem != recipe.resultItem) return false; // Je tam nìco jiného -> STOP
-        if (outputAmount + recipe.resultAmount > outputItem.maxStackSize) return false; // Je plno -> STOP
-
+        if (outputItem == null) return true;
+        if (outputItem != recipe.resultItem) return false;
+        if (outputAmount + recipe.resultAmount > outputItem.maxStackSize) return false;
         return true;
     }
 
     void SmeltItem(CraftingRecipe recipe)
     {
-        inputAmount -= 1; // Vždy bereme 1 várku (podle receptu by to mìlo být recipe.ingredients[0].amount)
-                          // Pro jednoduchost teï bereme 1 input item = 1 cyklus
+        // ZMÌNA: Odeèítáme podle receptu!
+        int cost = 1;
+        if (recipe.ingredients.Count > 0) cost = recipe.ingredients[0].amount;
 
-        if (inputAmount <= 0) inputItem = null;
+        inputAmount -= cost; // Odeèíst napø. 2
 
-        outputItem = recipe.resultItem;
-        outputAmount += recipe.resultAmount;
+        if (inputAmount <= 0)
+        {
+            inputItem = null;
+            inputAmount = 0;
+        }
+
+        if (outputItem == null) outputItem = recipe.resultItem;
+        outputAmount += recipe.resultAmount; // Pøièíst napø. 1
 
         cookTimer = 0;
 
-        if (inputItem == null) isCooking = false;
+        CheckIfCanCook();
     }
 
     public void Interact()
@@ -133,28 +126,55 @@ public class FurnaceInteractable : MonoBehaviour
         if (ui != null) ui.OpenFurnace(this);
     }
 
-    // --- UPRAVENÉ METODY PRO VKLÁDÁNÍ ---
-    // Nyní vrací int = kolik se skuteènì vložilo (zbytek zùstane v ruce/inventáøi)
+    void CheckIfCanCook()
+    {
+        // 1. Máme input?
+        if (inputItem == null)
+        {
+            isCooking = false;
+            return;
+        }
+
+        // 2. Máme recept?
+        CraftingRecipe recipe = RecipeManager.instance.GetFurnaceRecipe(inputItem);
+        if (recipe == null) return;
+
+        // 3. ZMÌNA: Máme DOST inputu? (Napø. máme 1, ale recept chce 2)
+        int cost = (recipe.ingredients.Count > 0) ? recipe.ingredients[0].amount : 1;
+        if (inputAmount < cost)
+        {
+            isCooking = false;
+            return;
+        }
+
+        // 4. Máme oheò?
+        if (currentBurnTime > 0 || (fuelItem != null && fuelAmount > 0))
+        {
+            if (CanOutputResult(recipe))
+            {
+                isCooking = true;
+            }
+        }
+    }
 
     public int TryAddInput(ItemData item, int amountToAdd)
     {
-        if (RecipeManager.instance.GetFurnaceRecipe(item) == null) return 0; // Není to tavitelná vìc
+        if (RecipeManager.instance.GetFurnaceRecipe(item) == null) return 0;
 
         if (inputItem == null)
         {
             inputItem = item;
             inputAmount = amountToAdd;
-            isCooking = true;
-            return amountToAdd; // Vzali jsme vše
+            CheckIfCanCook();
+            return amountToAdd;
         }
         else if (inputItem == item)
         {
-            // Tady by se dala øešit kapacita (max stack), zatím bereme vše
             inputAmount += amountToAdd;
-            isCooking = true;
+            CheckIfCanCook();
             return amountToAdd;
         }
-        return 0; // Jiný item
+        return 0;
     }
 
     public int TryAddFuel(ItemData item, int amountToAdd)
@@ -165,11 +185,13 @@ public class FurnaceInteractable : MonoBehaviour
         {
             fuelItem = item;
             fuelAmount = amountToAdd;
+            CheckIfCanCook();
             return amountToAdd;
         }
         else if (fuelItem == item)
         {
             fuelAmount += amountToAdd;
+            CheckIfCanCook();
             return amountToAdd;
         }
         return 0;
@@ -183,6 +205,7 @@ public class FurnaceInteractable : MonoBehaviour
             {
                 outputItem = null;
                 outputAmount = 0;
+                ui.UpdateVisuals();
             }
         }
     }
