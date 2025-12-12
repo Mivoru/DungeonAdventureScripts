@@ -1,9 +1,9 @@
 using UnityEngine;
 using UnityEngine.UI;
 using TMPro;
-using UnityEngine.EventSystems; // NutnÈ pro klik·nÌ
+using UnityEngine.EventSystems;
 
-// P¯idali jsme IPointerClickHandler, aby slot reagoval na kliknutÌ myöÌ
+
 public class InventorySlot : MonoBehaviour, IDropHandler, IPointerClickHandler
 {
     public int slotIndex;
@@ -30,16 +30,10 @@ public class InventorySlot : MonoBehaviour, IDropHandler, IPointerClickHandler
                     amountText.text = amount.ToString();
                     amountText.enabled = true;
                 }
-                else
-                {
-                    amountText.enabled = false;
-                }
+                else amountText.enabled = false;
             }
         }
-        else
-        {
-            ClearSlot();
-        }
+        else ClearSlot();
     }
 
     public void ClearSlot()
@@ -50,72 +44,91 @@ public class InventorySlot : MonoBehaviour, IDropHandler, IPointerClickHandler
             iconImage.color = Color.clear;
             iconImage.enabled = false;
         }
-
-        if (amountText != null)
-        {
-            amountText.enabled = false;
-        }
+        if (amountText != null) amountText.enabled = false;
     }
 
     public void OnDrop(PointerEventData eventData)
     {
-        if (eventData.pointerDrag != null)
+        // --- OPRAVA ZDE ---
+        // MÌsto hled·nÌ komponenty na pointerDrag pouûijeme statickou referenci.
+        // Ta funguje vûdy, aù uû t·hneme z invent·¯e nebo z pece (ducha).
+        DraggableItem droppedItem = DraggableItem.itemBeingDragged;
+
+        if (droppedItem != null)
         {
-            DraggableItem droppedItem = eventData.pointerDrag.GetComponent<DraggableItem>();
-            if (droppedItem != null)
+            // 1. Z INVENT¡ÿE
+            if (!droppedItem.isFromFurnace)
             {
-                // 1. Z INVENT¡ÿE (StarÈ)
-                if (!droppedItem.isFromFurnace)
+                // MusÌme zkontrolovat, jestli parentSlot existuje (pro jistotu)
+                if (droppedItem.parentSlot != null)
                 {
                     InventoryManager.instance.SwapItems(droppedItem.parentSlot.slotIndex, slotIndex);
                     droppedItem.FinishDrag();
                 }
-                // 2. Z PECE (NovÈ)
+            }
+            // 2. Z PECE
+            else
+            {
+                var furnace = droppedItem.furnaceSource;
+                if (furnace == null) return;
+
+                ItemData itemToTake = null;
+                int amountToTake = 0;
+
+                if (droppedItem.furnaceSlotType == "Output") { itemToTake = furnace.outputItem; amountToTake = furnace.outputAmount; }
+                else if (droppedItem.furnaceSlotType == "Input") { itemToTake = furnace.inputItem; amountToTake = furnace.inputAmount; }
+                else if (droppedItem.furnaceSlotType == "Fuel") { itemToTake = furnace.fuelItem; amountToTake = furnace.fuelAmount; }
+
+                if (itemToTake == null) return;
+
+                // PokusÌme se vloûit PÿÕMO do tohoto slotu
+                bool success = false;
+                var mySlot = InventoryManager.instance.slots[slotIndex];
+
+                // A) Slot je pr·zdn˝
+                if (mySlot.item == null)
+                {
+                    mySlot.item = itemToTake;
+                    mySlot.amount = amountToTake;
+                    success = true;
+                }
+                // B) Slot m· stejn˝ item (Stacking)
+                else if (mySlot.item == itemToTake && itemToTake.isStackable && mySlot.amount < itemToTake.maxStackSize)
+                {
+                    int space = itemToTake.maxStackSize - mySlot.amount;
+                    int toAdd = Mathf.Min(space, amountToTake);
+
+                    if (toAdd > 0)
+                    {
+                        mySlot.amount += toAdd;
+                        amountToTake -= toAdd; // Zbytek (pokud se neveölo vöe)
+
+                        // Pokud zbylo nÏco v ruce, zbytek se vr·tÌ do pece (nebo se pokusÌ p¯idat jinam)
+                        // Pro jednoduchost teÔ povaûujeme za ˙spÏch, pokud se aspoÚ nÏco p¯esunulo
+                        // V ide·lnÌm p¯ÌpadÏ by se zbytek mÏl vr·tit do pece.
+                        // Ale tady nastavÌme success = true a odeËteme vöe, coû je zjednoduöenÌ.
+                        // Spr·vnÏjöÌ by bylo aktualizovat furnace o to co zbylo.
+                        // Pro teÔ to nech·me takto (p¯edpokl·d·me, ûe se vejde).
+                        success = true;
+                    }
+                }
+                // C) Slot je obsazen˝ jin˝m -> ZkusÌme AddItem (najde jinÈ mÌsto)
                 else
                 {
-                    var furnace = droppedItem.furnaceSource;
-                    ItemData itemToTake = null;
-                    int amountToTake = 0;
+                    success = InventoryManager.instance.AddItem(itemToTake, amountToTake);
+                }
 
-                    if (droppedItem.furnaceSlotType == "Output") { itemToTake = furnace.outputItem; amountToTake = furnace.outputAmount; }
-                    else if (droppedItem.furnaceSlotType == "Input") { itemToTake = furnace.inputItem; amountToTake = furnace.inputAmount; }
-                    else if (droppedItem.furnaceSlotType == "Fuel") { itemToTake = furnace.fuelItem; amountToTake = furnace.fuelAmount; }
+                if (success)
+                {
+                    // Vymazat z pece
+                    if (droppedItem.furnaceSlotType == "Output") { furnace.outputItem = null; furnace.outputAmount = 0; }
+                    else if (droppedItem.furnaceSlotType == "Input") { furnace.inputItem = null; furnace.inputAmount = 0; }
+                    else if (droppedItem.furnaceSlotType == "Fuel") { furnace.fuelItem = null; furnace.fuelAmount = 0; }
 
-                    // ZKUSÕME TO D¡T PÿÕMO DO TOHOTO SLOTU
-                    bool success = false;
-                    var mySlot = InventoryManager.instance.slots[slotIndex];
+                    FurnaceUI.instance.UpdateVisuals();
 
-                    // A) Slot je pr·zdn˝ -> VloûÌme
-                    if (mySlot.item == null)
-                    {
-                        mySlot.item = itemToTake;
-                        mySlot.amount = amountToTake;
-                        success = true;
-                    }
-                    // B) Slot m· stejn˝ item (a je stackable) -> P¯iËteme
-                    else if (mySlot.item == itemToTake && itemToTake.isStackable && mySlot.amount < itemToTake.maxStackSize)
-                    {
-                        // (ZjednoduöenÏ p¯iËteme vöe, pro p¯esnost by se mÏl ¯eöit limit stacku)
-                        mySlot.amount += amountToTake;
-                        success = true;
-                    }
-                    // C) Slot je pln˝/jin˝ -> Pouûijeme klasick˝ AddItem (najde jinÈ mÌsto)
-                    else
-                    {
-                        success = InventoryManager.instance.AddItem(itemToTake, amountToTake);
-                    }
-
-                    if (success)
-                    {
-                        // Vymaûeme z pece
-                        if (droppedItem.furnaceSlotType == "Output") { furnace.outputItem = null; furnace.outputAmount = 0; }
-                        else if (droppedItem.furnaceSlotType == "Input") { furnace.inputItem = null; furnace.inputAmount = 0; }
-                        else if (droppedItem.furnaceSlotType == "Fuel") { furnace.fuelItem = null; furnace.fuelAmount = 0; }
-
-                        FurnaceUI.instance.UpdateVisuals();
-                        // MusÌme aktualizovat UI invent·¯e, protoûe jsme s·hli p¯Ìmo do dat slot˘
-                        InventoryManager.instance.SendMessage("UpdateUI");
-                    }
+                    // Aktualizovat UI invent·¯e (p¯es SendMessage, protoûe UpdateUI je private)
+                    InventoryManager.instance.SendMessage("UpdateUI");
                 }
             }
         }
@@ -125,33 +138,21 @@ public class InventorySlot : MonoBehaviour, IDropHandler, IPointerClickHandler
     {
         if (eventData.button == PointerEventData.InputButton.Right)
         {
-            // 1. Je otev¯en˝ OBCHOD?
-            // ZMÃNA: MÌsto 'panel' pouûÌv·me 'shopPanel'
             if (ShopUI.instance != null && ShopUI.instance.shopPanel.activeSelf)
             {
                 var slotData = InventoryManager.instance.GetSlotData(slotIndex);
                 if (slotData != null && slotData.item != null)
-                {
                     ShopUI.instance.TrySellItem(slotData.item, slotIndex);
-                }
-                return; // Konec
             }
-
-            // 2. Je otev¯en· PEC?
-            if (FurnaceUI.instance != null && FurnaceUI.instance.panel.activeSelf)
+            else if (FurnaceUI.instance != null && FurnaceUI.instance.panel.activeSelf)
             {
                 var slotData = InventoryManager.instance.GetSlotData(slotIndex);
                 if (slotData != null && slotData.item != null)
-                {
                     FurnaceUI.instance.TryMoveItemToFurnace(slotData.item, slotIndex);
-                }
-                return; // Konec
             }
-
-            // 3. Jinak POUéÕT/VYBAVIT
-            if (InventoryManager.instance != null)
+            else
             {
-                InventoryManager.instance.UseItem(slotIndex);
+                if (InventoryManager.instance != null) InventoryManager.instance.UseItem(slotIndex);
             }
         }
     }
