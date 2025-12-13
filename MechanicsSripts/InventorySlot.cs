@@ -4,7 +4,7 @@ using TMPro;
 using UnityEngine.EventSystems;
 
 
-public class InventorySlot : MonoBehaviour, IDropHandler, IPointerClickHandler
+public class InventorySlot : MonoBehaviour, IDropHandler, IPointerClickHandler, IPointerEnterHandler, IPointerExitHandler
 {
     public int slotIndex;
 
@@ -155,5 +155,37 @@ public class InventorySlot : MonoBehaviour, IDropHandler, IPointerClickHandler
                 if (InventoryManager.instance != null) InventoryManager.instance.UseItem(slotIndex);
             }
         }
+    }
+    public void OnPointerEnter(PointerEventData eventData)
+    {
+        if (InventoryManager.instance == null) return;
+
+        // Získáme data o slotu
+        var slotData = InventoryManager.instance.GetSlotData(slotIndex);
+
+        // Pokud je ve slotu item, ukážeme tooltip
+        if (slotData != null && slotData.item != null)
+        {
+            InventoryManager.instance.ShowTooltip(slotData.item.itemName);
+        }
+        else
+        {
+            // Pokud je slot prázdný, schováme tooltip (pro jistotu)
+            InventoryManager.instance.HideTooltip();
+        }
+    }
+
+    public void OnPointerExit(PointerEventData eventData)
+    {
+        if (InventoryManager.instance != null)
+        {
+            InventoryManager.instance.HideTooltip();
+        }
+    }
+
+    // Pojistka: Když se item vypne/znièí, schovej tooltip
+    void OnDisable()
+    {
+        if (InventoryManager.instance != null) InventoryManager.instance.HideTooltip();
     }
 }

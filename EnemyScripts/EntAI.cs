@@ -1,4 +1,3 @@
-using System;
 using System.Collections;
 using UnityEngine;
 
@@ -6,21 +5,21 @@ public class EntAI : BaseEnemyAI
 {
     [Header("Combat Settings")]
     public float meleeRange = 2.5f;
-    public float rangeAttackDistance = 6f; // Kdy zaène pouívat bøeèan
+    public float rangeAttackDistance = 6f;
 
     [Header("Attacks")]
     public int meleeDamage = 20;
-    public int ivyDamage = 35; // Silnı útok
+    public int ivyDamage = 35;
 
     [Header("Cooldowns")]
     public float meleeCooldown = 2f;
     public float ivyCooldown = 5f;
-    public float stunCooldown = 10f; // Elitní útok ménì èasto
+    public float stunCooldown = 10f;
 
     [Header("Prefabs")]
-    public GameObject ivyProjectilePrefab; // Plazivı bøeèan
-    public Transform ivySpawnPoint;        // Z ruky nebo ze zemì u nohou
-    public GameObject rootTrapPrefab;      // Stunující koøeny
+    public GameObject ivyProjectilePrefab;
+    public Transform ivySpawnPoint;
+    public GameObject rootTrapPrefab;
 
     // Èasovaèe
     private float nextMeleeTime;
@@ -30,13 +29,12 @@ public class EntAI : BaseEnemyAI
     public override void Start()
     {
         base.Start();
-        // První stun mùe zkusit brzy
         nextStunTime = Time.time + 3f;
     }
 
     public override void Update()
     {
-        base.Update(); // Øeší otáèení a animaci pohybu
+        base.Update(); // Base øeší Speed pro Walk/Idle
 
         if (player == null || isActionInProgress)
         {
@@ -53,9 +51,6 @@ public class EntAI : BaseEnemyAI
         }
         else if (dist <= rangeAttackDistance)
         {
-            // Jsme ve støední vzdálenosti -> Mùeme dát Bøeèan nebo Stun
-
-            // Náhodná šance na Stun (pokud je ready)
             if (Time.time >= nextStunTime && UnityEngine.Random.value > 0.6f)
             {
                 StartCoroutine(StunAttack());
@@ -66,13 +61,11 @@ public class EntAI : BaseEnemyAI
             }
             else
             {
-                // Cooldowny bìí -> jdi k hráèi
                 MoveToPlayer();
             }
         }
         else
         {
-            // Moc daleko -> jdi k hráèi
             MoveToPlayer();
         }
     }
@@ -83,23 +76,29 @@ public class EntAI : BaseEnemyAI
         agent.SetDestination(player.position);
     }
 
-    // --- ÚTOKY ---
+    // --- ÚTOKY (Coroutines) ---
 
     IEnumerator MeleeAttack()
     {
         isActionInProgress = true;
         agent.isStopped = true;
-        anim.SetTrigger("MeleeAttack"); // Animace úderu
 
-        yield return new WaitForSeconds(0.5f); // Èas nápøahu
+        // Spuštìní animace Melee (Int 1)
+        anim.SetInteger("Attack_Type", 1);
 
-        // Jednoduchı melee zásah
+        // Èekáme na moment úderu (uprav podle délky animace)
+        yield return new WaitForSeconds(0.5f);
+
         if (Vector2.Distance(transform.position, player.position) <= meleeRange + 0.5f)
         {
             player.GetComponent<PlayerStats>()?.TakeDamage(meleeDamage);
         }
 
-        yield return new WaitForSeconds(0.5f); // Dojezd animace
+        // Èekáme na konec animace
+        yield return new WaitForSeconds(0.5f);
+
+        // Reset do Idle/Walk
+        anim.SetInteger("Attack_Type", 0);
 
         nextMeleeTime = Time.time + meleeCooldown;
         isActionInProgress = false;
@@ -109,17 +108,16 @@ public class EntAI : BaseEnemyAI
     {
         isActionInProgress = true;
         agent.isStopped = true;
-        anim.SetTrigger("RangeAttack"); // Animace zaboøení rukou
 
-        // Èekáme na moment, kdy zaboøí ruce do zemì
+        // Spuštìní animace Range (Int 2)
+        anim.SetInteger("Attack_Type", 2);
+
+        // Èekáme na moment vystøelení (kdy zaboøí ruce)
         yield return new WaitForSeconds(0.6f);
 
         if (ivyProjectilePrefab != null && ivySpawnPoint != null)
         {
-            // Vytvoøíme projektil
             GameObject ivy = Instantiate(ivyProjectilePrefab, ivySpawnPoint.position, Quaternion.identity);
-
-            // Nasmìrujeme ho na hráèe
             Vector2 dir = (player.position - transform.position).normalized;
 
             EntIvyProjectile projScript = ivy.GetComponent<EntIvyProjectile>();
@@ -130,7 +128,10 @@ public class EntAI : BaseEnemyAI
             }
         }
 
-        yield return new WaitForSeconds(0.5f); // Zvedání rukou
+        yield return new WaitForSeconds(0.5f); // Dojezd animace
+
+        // Reset
+        anim.SetInteger("Attack_Type", 0);
 
         nextIvyTime = Time.time + ivyCooldown;
         isActionInProgress = false;
@@ -140,21 +141,30 @@ public class EntAI : BaseEnemyAI
     {
         isActionInProgress = true;
         agent.isStopped = true;
-        anim.SetTrigger("SummonAttack"); // Ruce nahoru
 
-        // Chvíli "èaruje"
-        yield return new WaitForSeconds(0.4f);
+        // Spuštìní animace Summon (Int 3)
+        anim.SetInteger("Attack_Type", 3);
 
-        if (rootTrapPrefab != null)
-        {
-            // Spawneme past PØESNÌ pod hráèem (v tu chvíli)
-            // Hráè má pak chvilku na úhyb (øeší skript pasti)
-            Instantiate(rootTrapPrefab, player.position, Quaternion.identity);
-        }
+        // ZDE NEÈEKÁME NA CÓDÌ! 
+        // Èekáme jen na dokonèení celé animace.
+        // Samotnı spawn pasti vyvolá Animation Event (metoda SpawnRootTrap níe).
 
-        yield return new WaitForSeconds(1.0f); // Dlouhá animace vyvolávání
+        yield return new WaitForSeconds(1.2f); // Celková délka animace vyvolávání
+
+        // Reset
+        anim.SetInteger("Attack_Type", 0);
 
         nextStunTime = Time.time + stunCooldown;
         isActionInProgress = false;
+    }
+
+    // --- TUTO METODU ZAVOLÁŠ V ANIMACI (Animation Event) ---
+    public void SpawnRootTrap()
+    {
+        if (rootTrapPrefab != null && player != null)
+        {
+            // Spawneme past PØESNÌ pod hráèem
+            Instantiate(rootTrapPrefab, player.position, Quaternion.identity);
+        }
     }
 }

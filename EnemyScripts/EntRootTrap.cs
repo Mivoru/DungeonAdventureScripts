@@ -3,49 +3,46 @@ using UnityEngine;
 
 public class EntRootTrap : MonoBehaviour
 {
-    [Header("Settings")]
-    public float warningTime = 0.5f; // Jak dlouho má hráè na útìk
-    public float stunDuration = 2.0f; // Jak dlouho bude stát
-    public int damage = 10; // Malý damage, hlavnì stun
+    [Header("Timing Settings")]
+    public float activationDelay = 0.5f; // <--- NOVÉ: Èas od spawnu do "kousnutí" (Cooldown)
+    public float trapDuration = 2.0f;    // Celková životnost objektu (musí být víc než activationDelay)
 
-    [Header("Visuals")]
-    public Sprite warningSprite; // Kruh na zemi (èervený?)
-    public Sprite activeSprite;  // Vyrostlé koøeny
+    [Header("Combat Settings")]
+    public float stunDuration = 1.5f;
+    public int damage = 10;
 
-    private SpriteRenderer sr;
-    private bool isActive = false;
+    private bool hasTriggered = false;
+    private Animator anim;
 
     void Start()
     {
-        sr = GetComponent<SpriteRenderer>();
-        if (warningSprite) sr.sprite = warningSprite;
+        anim = GetComponent<Animator>();
 
-        // Zaèneme odpoèet varování
-        StartCoroutine(TrapRoutine());
+        // Znièíme objekt po celkové dobì (úklid)
+        Destroy(gameObject, trapDuration);
+
+        // Spustíme odpoèet do aktivace
+        StartCoroutine(ActivationRoutine());
     }
 
-    IEnumerator TrapRoutine()
+    IEnumerator ActivationRoutine()
     {
-        // 1. FÁZE: VAROVÁNÍ (Barva tøeba do èervena)
-        sr.color = new Color(1, 0, 0, 0.5f); // Poloprùhledná èervená
-        yield return new WaitForSeconds(warningTime);
+        // 1. Èekáme (Cooldown/Varování)
+        // Hráè má tento èas na to, aby utekl z kruhu
+        yield return new WaitForSeconds(activationDelay);
 
-        // 2. FÁZE: AKTIVACE (CHÒAP!)
-        isActive = true;
-        if (activeSprite) sr.sprite = activeSprite;
-        sr.color = Color.white; // Normální barva
+        // 2. Kousnutí!
+        // (Pokud máš v animaci speciální moment pro kousnutí, 
+        //  mùžeš to naèasovat tak, aby activationDelay odpovídalo délce "pøípravné" fáze animace)
 
-        // Zkontrolujeme, kdo v tom stojí TEÏ
         CheckCapture();
-
-        // Necháme chvíli viditelné koøeny a pak zmizíme
-        yield return new WaitForSeconds(1.0f);
-        Destroy(gameObject);
     }
 
     void CheckCapture()
     {
-        // Kruhový test kolize
+        if (hasTriggered) return;
+
+        // Kruhový test kolize pøesnì v místì pasti
         Collider2D hit = Physics2D.OverlapCircle(transform.position, 0.5f, LayerMask.GetMask("Player"));
 
         if (hit != null)
@@ -53,14 +50,24 @@ public class EntRootTrap : MonoBehaviour
             PlayerStats stats = hit.GetComponent<PlayerStats>();
             PlayerMovement move = hit.GetComponent<PlayerMovement>();
 
-            if (stats != null) stats.TakeDamage(damage);
+            // Udìlit damage
+            if (stats != null)
+            {
+                stats.TakeDamage(damage);
+            }
 
-            // APLIKACE STUNU (Zpomalení na 0%)
+            // Aplikovat Stun
             if (move != null)
             {
                 Debug.Log("HRÁÈ CHYCEN DO KOØENÙ!");
-                move.ApplySlow(stunDuration, 0f); // 0f = Úplné zastavení
+                move.ApplySlow(stunDuration, 0f);
             }
+
+            hasTriggered = true;
         }
     }
+
+    // Poznámka: OnTriggerEnter2D jsme odstranili, protože chceme, 
+    // aby past "klapla" v jeden konkrétní moment, ne aby fungovala jako nášlapná mina.
+    // Pokud v ní hráè v èase 'activationDelay' nestojí, má štìstí.
 }

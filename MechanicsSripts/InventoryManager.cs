@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using UnityEngine;
 using UnityEngine.InputSystem;
 using UnityEngine.UI; // Nutné pro LayoutRebuilder
+using TMPro;
 
 public class InventoryManager : MonoBehaviour
 {
@@ -21,6 +22,11 @@ public class InventoryManager : MonoBehaviour
 
     [Header("Starting Items")]
     public List<ItemData> startingItems;
+
+    [Header("Tooltip")]
+    public GameObject tooltipPanel;
+    public TMP_Text tooltipText;
+    public Vector3 tooltipOffset = new Vector3(15, -15, 0); // Posun od myši
 
     [System.Serializable]
     public class SlotData
@@ -370,5 +376,38 @@ public class InventoryManager : MonoBehaviour
             }
         }
         UpdateUI();
+    }
+    void Update()
+    {
+        // ... (pokud tam máš nìco jiného, nech to tam) ...
+
+        // Logika pro pohyb Tooltipu za myší
+        if (tooltipPanel != null && tooltipPanel.activeSelf)
+        {
+            // Posuneme panel na pozici myši + offset
+            tooltipPanel.transform.position = Mouse.current.position.ReadValue() + (Vector2)tooltipOffset;
+        }
+    }
+
+    // Tuto metodu zavolá Slot, když na nìj najedeš
+    public void ShowTooltip(string itemName)
+    {
+        if (tooltipPanel != null && tooltipText != null)
+        {
+            tooltipText.text = itemName;
+            tooltipPanel.SetActive(true);
+
+            // Zajistíme, že je tooltip vykreslený úplnì nahoøe (nad sloty)
+            tooltipPanel.transform.SetAsLastSibling();
+        }
+    }
+
+    // Tuto metodu zavolá Slot, když z nìj odjedeš
+    public void HideTooltip()
+    {
+        if (tooltipPanel != null)
+        {
+            tooltipPanel.SetActive(false);
+        }
     }
 }
