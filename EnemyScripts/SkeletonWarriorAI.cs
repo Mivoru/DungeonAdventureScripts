@@ -13,22 +13,29 @@ public class SkeletonWarriorAI : MonoBehaviour
     public float patrolRadius = 5f;
     public float patrolWaitTime = 2f;
 
-    [Header("Combat Distances")]
+    [Header("Search Logic")]
+    public float searchDuration = 5f;
+    public float searchRadius = 8f;
+
+    [Header("Vision")]
     public float aggroRange = 8f;
+    public LayerMask obstacleLayer; // Zdi
+
+    [Header("Combat Distances")]
     public float protectRangeMax = 8f;
     public float protectRangeMin = 3.5f;
     public float meleeRange = 1.8f;
 
     [Header("Damage Settings")]
-    public int lightDamage = 15;      // Menší damage
-    public int heavyDamage = 30;      // Vìtší damage
+    public int lightDamage = 15;
+    public int heavyDamage = 30;
     public float attackCooldown = 2f;
 
     [Header("Layers")]
     public LayerMask projectileLayer;
     public LayerMask playerLayer;
 
-    private enum State { Patrol, Chase, Combat, Protect }
+    private enum State { Patrol, Chase, Search, Combat, Protect }
     private State currentState = State.Patrol;
 
     private NavMeshAgent agent;
@@ -38,9 +45,12 @@ public class SkeletonWarriorAI : MonoBehaviour
 
     private float nextAttackTime;
     private float patrolTimer;
-    private bool isActionInProgress = false;
+    private float searchTimer;
+
     private Vector3 startPosition;
     private Vector3 baseScale;
+    private Vector3 lastKnownPosition;
+    private bool isActionInProgress = false;
 
     void Start()
     {
@@ -66,23 +76,25 @@ public class SkeletonWarriorAI : MonoBehaviour
         if (isActionInProgress) return;
 
         float dist = Vector2.Distance(transform.position, player.position);
+        bool canSee = CheckLineOfSight();
 
-        if (currentState != State.Patrol) RotateTowards(player.position);
+        if (currentState != State.Patrol && currentState != State.Search) RotateTowards(player.position);
         else if (agent.velocity.sqrMagnitude > 0.1f) RotateTowards(agent.steeringTarget);
 
         switch (currentState)
         {
-            case State.Patrol: PatrolLogic(dist); break;
-            case State.Chase: ChaseLogic(dist); break;
+            case State.Patrol: PatrolLogic(dist, canSee); break;
+            case State.Chase: ChaseLogic(dist, canSee); break;
+            case State.Search: SearchLogic(canSee); break;
             case State.Combat: CombatLogic(dist); break;
         }
 
         UpdateAnimation();
     }
 
-    // --- POHYB A LOGIKA ---
+    // --- LOGIKA ---
 
-    void PatrolLogic(float dist)
+    void PatrolLogic(float dist, bool canSee)
     {
         agent.speed = walkSpeed;
         if (!agent.pathPending && agent.remainingDistance < 0.5f)
@@ -90,23 +102,65 @@ public class SkeletonWarriorAI : MonoBehaviour
             patrolTimer += Time.deltaTime;
             if (patrolTimer >= patrolWaitTime) { SetPatrolPoint(); patrolTimer = 0; }
         }
-        if (dist < aggroRange) currentState = State.Chase;
+
+        // Vidí hráèe -> Chase
+        if (dist < aggroRange && canSee) currentState = State.Chase;
     }
 
-    void ChaseLogic(float dist)
+    void ChaseLogic(float dist, bool canSee)
     {
         agent.speed = runSpeed;
         agent.isStopped = false;
-        agent.SetDestination(player.position);
 
-        // Krytí pøed šípy
-        if (dist < protectRangeMax && dist > protectRangeMin)
+        if (canSee)
         {
-            if (CheckForProjectiles()) { StartCoroutine(PerformBlock()); return; }
-        }
+            lastKnownPosition = player.position;
+            agent.SetDestination(player.position);
 
-        // Boj
-        if (dist <= meleeRange) currentState = State.Combat;
+            // Blokování šípù
+            if (dist < protectRangeMax && dist > protectRangeMin)
+            {
+                if (CheckForProjectiles()) { StartCoroutine(PerformBlock()); return; }
+            }
+
+            if (dist <= meleeRange) currentState = State.Combat;
+        }
+        else
+        {
+            currentState = State.Search;
+        }
+    }
+
+    void SearchLogic(bool canSee)
+    {
+        if (canSee) { currentState = State.Chase; searchTimer = 0; return; }
+
+        agent.speed = runSpeed;
+
+        // Pokud je daleko od posledního místa, bìž tam
+        if (Vector2.Distance(transform.position, lastKnownPosition) > 2f && searchTimer == 0)
+        {
+            agent.SetDestination(lastKnownPosition);
+        }
+        else
+        {
+            // Hledání v okruhu 8m
+            searchTimer += Time.deltaTime;
+            if (!agent.hasPath || agent.remainingDistance < 0.5f)
+            {
+                Vector2 rnd = UnityEngine.Random.insideUnitCircle * searchRadius;
+                Vector3 dest = lastKnownPosition + new Vector3(rnd.x, rnd.y, 0);
+                NavMeshHit hit;
+                if (NavMesh.SamplePosition(dest, out hit, 2f, NavMesh.AllAreas)) agent.SetDestination(hit.position);
+            }
+
+            if (searchTimer > searchDuration)
+            {
+                currentState = State.Patrol;
+                SetPatrolPoint();
+                searchTimer = 0;
+            }
+        }
     }
 
     void CombatLogic(float dist)
@@ -118,102 +172,64 @@ public class SkeletonWarriorAI : MonoBehaviour
 
         if (Time.time >= nextAttackTime)
         {
-            // ROZHODOVÁNÍ: LIGHT nebo HEAVY?
-            float randomVal = UnityEngine.Random.value; // Èíslo 0.0 až 1.0
-
-            if (randomVal > 0.7f) // 30% šance na Tìžký útok
-            {
-                // Typ 2 = Heavy, Damage, Zpoždìní zásahu 0.8s
-                StartCoroutine(AttackRoutine(2, heavyDamage, 0.8f));
-            }
-            else // 70% šance na Lehký útok
-            {
-                // Typ 1 = Light, Damage, Zpoždìní zásahu 0.4s
-                StartCoroutine(AttackRoutine(1, lightDamage, 0.4f));
-            }
+            float r = UnityEngine.Random.value;
+            if (r > 0.7f) StartCoroutine(AttackRoutine(2, heavyDamage, 0.8f));
+            else StartCoroutine(AttackRoutine(1, lightDamage, 0.4f));
 
             nextAttackTime = Time.time + attackCooldown;
         }
     }
 
-    // --- AKCE ---
+    // --- POMOCNÉ ---
 
-    bool CheckForProjectiles()
+    bool CheckLineOfSight()
     {
-        return Physics2D.OverlapCircle(transform.position, 3.5f, projectileLayer) != null;
+        Vector2 dir = player.position - transform.position;
+        if (dir.magnitude > aggroRange) return false;
+
+        RaycastHit2D hit = Physics2D.Raycast(transform.position, dir, aggroRange, obstacleLayer);
+        if (hit.collider != null && hit.transform != player) return false; // Trefilo zeï
+        return true;
     }
+
+    public void TriggerAggro() { lastKnownPosition = player.position; currentState = State.Chase; }
+
+    bool CheckForProjectiles() { return Physics2D.OverlapCircle(transform.position, 3.5f, projectileLayer) != null; }
 
     IEnumerator PerformBlock()
     {
-        isActionInProgress = true;
-        agent.isStopped = true;
-        anim.SetFloat("Speed", 0);
-
-        anim.SetBool("IsBlocking", true);
-        yield return new WaitForSeconds(1.5f);
-        anim.SetBool("IsBlocking", false);
-
-        isActionInProgress = false;
-        currentState = State.Chase;
+        isActionInProgress = true; agent.isStopped = true; anim.SetFloat("Speed", 0);
+        anim.SetBool("IsBlocking", true); yield return new WaitForSeconds(1.5f); anim.SetBool("IsBlocking", false);
+        isActionInProgress = false; currentState = State.Chase;
     }
 
-    // UNIVERZÁLNÍ ÚTOÈNÁ RUTINA
-    // typeID: 1=Light, 2=Heavy
-    // dmg: kolik to ubere
-    // delay: kdy pøesnì ve animaci má dojít k zásahu (Heavy je pomalejší)
     IEnumerator AttackRoutine(int typeID, int dmg, float delay)
     {
-        isActionInProgress = true;
-        agent.isStopped = true;
-        RotateTowards(player.position);
-
-        // Spustíme animaci (1 nebo 2)
-        anim.SetInteger("AttackType", typeID);
-
-        // Èekáme na moment úderu
-        yield return new WaitForSeconds(delay);
-
-        // Kontrola zásahu
-        DealDamage(dmg, meleeRange + 0.5f);
-
-        // Èekáme na dokonèení animace (zbytek èasu)
-        yield return new WaitForSeconds(0.5f);
-
-        // Reset
-        anim.SetInteger("AttackType", 0);
-        isActionInProgress = false;
+        isActionInProgress = true; agent.isStopped = true; RotateTowards(player.position);
+        anim.SetInteger("AttackType", typeID); yield return new WaitForSeconds(delay);
+        DealDamage(dmg, meleeRange + 0.5f); yield return new WaitForSeconds(0.5f);
+        anim.SetInteger("AttackType", 0); isActionInProgress = false;
     }
 
     void DealDamage(int dmg, float range)
     {
         float facingDir = Mathf.Sign(transform.localScale.x);
         Vector3 attackCenter = transform.position + new Vector3(facingDir * 0.8f, 0, 0);
-
         Collider2D[] hits = Physics2D.OverlapCircleAll(attackCenter, range, playerLayer);
-        foreach (var hit in hits)
-        {
-            hit.GetComponent<PlayerStats>()?.TakeDamage(dmg);
-        }
+        foreach (var hit in hits) hit.GetComponent<PlayerStats>()?.TakeDamage(dmg);
     }
-
-    // --- POMOCNÉ ---
-
-    public void TriggerAggro() { if (currentState == State.Patrol) currentState = State.Chase; }
 
     void SetPatrolPoint()
     {
         Vector3 p = startPosition + (Vector3)UnityEngine.Random.insideUnitSphere * patrolRadius;
         NavMeshHit hit;
-        if (NavMesh.SamplePosition(p, out hit, patrolRadius, NavMesh.AllAreas))
-            agent.SetDestination(hit.position);
+        if (NavMesh.SamplePosition(p, out hit, patrolRadius, NavMesh.AllAreas)) agent.SetDestination(hit.position);
     }
 
     void RotateTowards(Vector3 target)
     {
-        if (target.x < transform.position.x)
-            transform.localScale = new Vector3(-Mathf.Abs(baseScale.x), baseScale.y, baseScale.z);
-        else
-            transform.localScale = new Vector3(Mathf.Abs(baseScale.x), baseScale.y, baseScale.z);
+        if (target.x < transform.position.x) transform.localScale = new Vector3(-Mathf.Abs(baseScale.x), baseScale.y, baseScale.z);
+        else transform.localScale = new Vector3(Mathf.Abs(baseScale.x), baseScale.y, baseScale.z);
     }
 
     void UpdateAnimation()
@@ -225,6 +241,6 @@ public class SkeletonWarriorAI : MonoBehaviour
     void OnDrawGizmosSelected()
     {
         Gizmos.color = Color.yellow; Gizmos.DrawWireSphere(transform.position, aggroRange);
-        Gizmos.color = Color.red; Gizmos.DrawWireSphere(transform.position, meleeRange);
+        Gizmos.color = Color.cyan; Gizmos.DrawWireSphere(lastKnownPosition, searchRadius);
     }
 }

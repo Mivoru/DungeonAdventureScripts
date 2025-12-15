@@ -1,3 +1,4 @@
+using System;
 using System.Collections;
 using UnityEngine;
 using UnityEngine.AI;
@@ -12,10 +13,13 @@ public class SkeletonArcherAI : MonoBehaviour
     public float patrolRadius = 6f;
     public float patrolWaitTime = 2f;
 
+    [Header("Search Logic")]
+    public float searchDuration = 5f; // Jak dlouho hledá, než se vrátí na hlídku
+    public float searchRadius = 8f;   // V jakém okruhu "čmuchá"
+
     [Header("Vision & Aggro")]
     public float aggroRange = 10f;
-    public LayerMask obstacleLayer;
-    public float searchTime = 4f;
+    public LayerMask obstacleLayer;   // Vrstva zdí (aby neviděl skrz)
 
     [Header("Combat Settings")]
     public float idealRange = 6f;
@@ -44,6 +48,7 @@ public class SkeletonArcherAI : MonoBehaviour
     private Transform player;
     private Vector3 startPosition;
     private Vector3 lastKnownPosition;
+    private Vector3 baseScale;
 
     private float nextShootTime;
     private float nextEvadeTime;
@@ -51,9 +56,6 @@ public class SkeletonArcherAI : MonoBehaviour
     private float searchTimer;
 
     private bool isActionInProgress = false;
-    private Vector3 baseScale;
-
-    // Proměnná pro imunitu (ptá se na ni EnemyStats)
     private bool isEvading = false;
 
     void Start()
@@ -76,11 +78,9 @@ public class SkeletonArcherAI : MonoBehaviour
     void Update()
     {
         if (player == null) return;
-
-        // Pokud probíhá animace (útok/úhyb), neměníme stav
         if (isActionInProgress) return;
 
-        // 1. KONTROLA ÚHYBU (Priorita)
+        // 1. KONTROLA ÚHYBU (Priorita - uhýbá před šípy)
         if (Time.time >= nextEvadeTime && CheckForProjectiles())
         {
             StartCoroutine(PerformEvasion());
@@ -88,7 +88,7 @@ public class SkeletonArcherAI : MonoBehaviour
         }
 
         float distToPlayer = Vector2.Distance(transform.position, player.position);
-        bool canSeePlayer = HasLineOfSight();
+        bool canSeePlayer = CheckLineOfSight();
 
         // 2. ROZHODOVÁNÍ STAVŮ
         switch (currentState)
@@ -106,17 +106,18 @@ public class SkeletonArcherAI : MonoBehaviour
                 FleeLogic(distToPlayer);
                 break;
             case State.Search:
-                SearchLogic(distToPlayer, canSeePlayer);
+                SearchLogic(canSeePlayer);
                 break;
         }
 
-        // Otáčení
+        // Otáčení (Face target)
         if (currentState != State.Patrol && currentState != State.Search)
         {
             RotateTowards(player.position);
         }
         else if (agent.velocity.sqrMagnitude > 0.1f)
         {
+            // Při hlídce/hledání se otáčí tam, kam jde
             RotateTowards(transform.position + (Vector3)agent.velocity);
         }
 
@@ -139,7 +140,11 @@ public class SkeletonArcherAI : MonoBehaviour
             }
         }
 
-        if (dist < aggroRange && see) currentState = State.Chase;
+        // Pokud je blízko A ZÁROVEŇ vidí hráče (není za zdí)
+        if (dist < aggroRange && see)
+        {
+            currentState = State.Chase;
+        }
     }
 
     void ChaseLogic(float dist, bool see)
@@ -148,14 +153,19 @@ public class SkeletonArcherAI : MonoBehaviour
 
         if (see)
         {
+            // Vidíme hráče -> aktualizujeme jeho pozici
             lastKnownPosition = player.position;
 
-            if (dist < fleeDistance) currentState = State.Flee;
-            else if (dist <= idealRange) currentState = State.Shoot;
-            else agent.SetDestination(player.position);
+            if (dist < fleeDistance)
+                currentState = State.Flee;
+            else if (dist <= idealRange)
+                currentState = State.Shoot;
+            else
+                agent.SetDestination(player.position);
         }
         else
         {
+            // Ztratili jsme vizuální kontakt -> Jdeme hledat
             currentState = State.Search;
         }
     }
@@ -165,8 +175,29 @@ public class SkeletonArcherAI : MonoBehaviour
         agent.isStopped = true;
         agent.velocity = Vector2.zero;
 
-        if (!see || dist > idealRange * 1.2f) { currentState = State.Chase; agent.isStopped = false; return; }
-        if (dist < fleeDistance) { currentState = State.Flee; agent.isStopped = false; return; }
+        // Pokud hráče nevidí, nemůže střílet -> jde ho hledat
+        if (!see)
+        {
+            currentState = State.Search;
+            agent.isStopped = false;
+            return;
+        }
+
+        // Pokud hráč utekl z dostřelu -> pronásledovat
+        if (dist > idealRange * 1.2f)
+        {
+            currentState = State.Chase;
+            agent.isStopped = false;
+            return;
+        }
+
+        // Pokud je hráč moc blízko -> útěk
+        if (dist < fleeDistance)
+        {
+            currentState = State.Flee;
+            agent.isStopped = false;
+            return;
+        }
 
         if (Time.time >= nextShootTime)
         {
@@ -179,19 +210,22 @@ public class SkeletonArcherAI : MonoBehaviour
     {
         agent.speed = runSpeed;
 
-        if (dist > fleeDistance * 1.2f)
+        // Pokud už utekl do bezpečí, vrací se do boje
+        if (dist > fleeDistance * 1.5f)
         {
-            currentState = State.Chase; // Opraveno: Návrat do Chase
+            currentState = State.Chase;
             return;
         }
 
+        // Logika ústupu (Smart Flee)
         Vector3 dirFromPlayer = (transform.position - player.position).normalized;
         Vector3 targetFleePos = transform.position + dirFromPlayer * 4f;
-
         NavMeshHit hit;
-        // Smart Flee: Zkoušíme dozadu, pak doprava, pak doleva
+
+        // Zkusí utéct dozadu
         if (!NavMesh.SamplePosition(targetFleePos, out hit, 2.0f, NavMesh.AllAreas))
         {
+            // Pokud nemůže dozadu (zeď), zkusí do boku
             Vector3 rightDir = Quaternion.Euler(0, 0, -90) * dirFromPlayer;
             Vector3 leftDir = Quaternion.Euler(0, 0, 90) * dirFromPlayer;
 
@@ -206,22 +240,79 @@ public class SkeletonArcherAI : MonoBehaviour
         }
     }
 
-    void SearchLogic(float dist, bool see)
+    void SearchLogic(bool see)
     {
-        if (see) { currentState = State.Chase; return; }
+        // 1. Pokud ho zmerčíme, okamžitě Chase
+        if (see)
+        {
+            currentState = State.Chase;
+            searchTimer = 0;
+            return;
+        }
 
         agent.speed = runSpeed;
-        agent.SetDestination(lastKnownPosition);
 
-        if (agent.remainingDistance < 1f)
+        // 2. Běžíme na místo posledního spatření
+        if (Vector2.Distance(transform.position, lastKnownPosition) > 2f && searchTimer == 0)
         {
+            agent.SetDestination(lastKnownPosition);
+        }
+        else
+        {
+            // 3. Jsme na místě -> začínáme prohledávat okolí (náhodná chůze v searchRadius)
             searchTimer += Time.deltaTime;
-            if (searchTimer > searchTime)
+
+            if (!agent.hasPath || agent.remainingDistance < 0.5f)
+            {
+                Vector2 randomPoint = UnityEngine.Random.insideUnitCircle * searchRadius;
+                Vector3 searchDest = lastKnownPosition + new Vector3(randomPoint.x, randomPoint.y, 0);
+
+                NavMeshHit hit;
+                if (NavMesh.SamplePosition(searchDest, out hit, 2f, NavMesh.AllAreas))
+                {
+                    agent.SetDestination(hit.position);
+                }
+            }
+
+            // 4. Vypršel čas hledání -> Návrat na hlídku
+            if (searchTimer > searchDuration)
             {
                 currentState = State.Patrol;
+                SetPatrolPoint();
                 searchTimer = 0;
             }
         }
+    }
+
+    // --- POMOCNÉ FUNKCE A DETEKCE ---
+
+    // Toto nahrazuje původní HasLineOfSight, přidává kontrolu zdí
+    bool CheckLineOfSight()
+    {
+        Vector2 dir = player.position - transform.position;
+        // Optimalizace: Pokud je dál než AggroRange, rovnou false
+        if (dir.magnitude > aggroRange) return false;
+
+        // Raycast na ObstacleLayer
+        RaycastHit2D hit = Physics2D.Raycast(transform.position, dir, aggroRange, obstacleLayer);
+
+        // Pokud paprsek trefí collider (zeď) a ten collider není hráč, tak nevidíme
+        if (hit.collider != null && hit.transform != player) return false;
+
+        return true;
+    }
+
+    bool CheckForProjectiles()
+    {
+        return Physics2D.OverlapCircle(transform.position, 4f, projectileLayer) != null;
+    }
+
+    // Voláno externě (např. při zásahu šípem)
+    public void TriggerAggro()
+    {
+        lastKnownPosition = player.position;
+        // I když ho nevidí, přepne do Chase (poběží na lastKnownPosition, pak případně Search)
+        currentState = State.Chase;
     }
 
     // --- AKCE (COROUTINES) ---
@@ -231,8 +322,7 @@ public class SkeletonArcherAI : MonoBehaviour
         isActionInProgress = true;
         anim.SetTrigger("Shoot");
 
-        // Čekáme na Animation Event (ten zavolá ShootProjectile)
-        // Dáme tomu čas (délka animace)
+        // Čekáme na animaci (Animation Event zavolá ShootProjectile)
         yield return new WaitForSeconds(1.0f);
 
         isActionInProgress = false;
@@ -241,118 +331,64 @@ public class SkeletonArcherAI : MonoBehaviour
     IEnumerator PerformEvasion()
     {
         isActionInProgress = true;
-        isEvading = true; // Imunita zapnuta
-
+        isEvading = true; // Imunita
         anim.SetTrigger("Evade");
 
-        // 1. ZJISTÍME SMĚR ÚSKOKU (Podle trajektorie šípu)
-        Vector3 dodgeDirection;
-
-        // Najdeme nejbližší šíp
-        Collider2D arrow = Physics2D.OverlapCircle(transform.position, 6f, projectileLayer);
-
-        if (arrow != null && arrow.attachedRigidbody != null)
-        {
-            // Získáme směr letu šípu
-            Vector2 arrowVelocity = arrow.attachedRigidbody.linearVelocity; // (V Unity 6)
-            // Pokud máš starší Unity, použij: arrow.attachedRigidbody.velocity;
-
-            if (arrowVelocity != Vector2.zero)
-            {
-                // Vypočítáme kolmici (Normalu) k letu šípu = Úskok do boku
-                // Kolmice k (x, y) je (-y, x)
-                dodgeDirection = new Vector3(-arrowVelocity.y, arrowVelocity.x, 0).normalized;
-            }
-            else
-            {
-                // Záloha: Kolmo k hráči
-                Vector3 dirToPlayer = (player.position - transform.position).normalized;
-                dodgeDirection = new Vector3(-dirToPlayer.y, dirToPlayer.x, 0);
-            }
-        }
-        else
-        {
-            // Záloha: Náhodně do boku
-            dodgeDirection = transform.right;
-        }
-
-        // Náhodně doleva nebo doprava (50/50)
+        // Jednoduchý úskok do boku
+        Vector3 dodgeDirection = transform.right;
         if (UnityEngine.Random.value > 0.5f) dodgeDirection = -dodgeDirection;
 
-        // 2. MANUÁLNÍ POHYB (DASH)
-        // Místo SetDestination použijeme Move(), který neřeší pathfinding, jen kolize.
-
-        agent.isStopped = true; // Vypneme automatický pohyb
+        // Manuální pohyb bez NavMeshe (Dash)
+        agent.isStopped = true;
         agent.ResetPath();
 
-        float dashDuration = 0.4f; // Jak dlouho skáče
-        float dashSpeed = 12f;     // Jak rychle skáče (hodně!)
+        float dashDuration = 0.4f;
+        float dashSpeed = 12f;
         float timer = 0f;
 
         while (timer < dashDuration)
         {
-            // Pohneme agentem manuálně o kousek v každém snímku
-            // agent.Move respektuje zdi (neprojde skrz), ale nesnaží se hledat cestu
             agent.Move(dodgeDirection * dashSpeed * Time.deltaTime);
-
             timer += Time.deltaTime;
-            yield return null; // Počkáme na další snímek
+            yield return null;
         }
 
-        // 3. KONEC
-        agent.isStopped = false; // Zapneme zpět mozek
+        agent.isStopped = false;
         nextEvadeTime = Time.time + evadeCooldown;
 
         isActionInProgress = false;
-        isEvading = false; // Vypneme imunitu
+        isEvading = false;
     }
-    // --- PUBLIC METODY (ANIMATION EVENTS & STATS) ---
 
-    // Tuto metodu volá Animation Event v animaci Shot1_Archer
+    // --- EVENTY Z ANIMACÍ ---
+
+    // Tuto metodu volá Animation Event v animaci střelby
     public void ShootProjectile()
     {
         if (arrowPrefab == null || firePoint == null || player == null) return;
 
-        // Střílíme směrem k hráči
         Vector2 direction = (player.position - firePoint.position).normalized;
-
         GameObject arrow = Instantiate(arrowPrefab, firePoint.position, Quaternion.identity);
 
+        // Nastavení rychlosti šípu
         Rigidbody2D rb = arrow.GetComponent<Rigidbody2D>();
+        // Poznámka: V Unity 6 se používá linearVelocity, ve starších velocity
         if (rb != null) rb.linearVelocity = direction * arrowSpeed;
 
         ArrowProjectile proj = arrow.GetComponent<ArrowProjectile>();
         if (proj != null) proj.damage = bowDamage;
     }
 
-    // Volá EnemyStats při zásahu
-    public void TriggerAggro()
-    {
-        lastKnownPosition = player.position;
-        if (!isActionInProgress) currentState = State.Chase;
-    }
+    // --- OSTATNÍ ---
 
-    // Volá EnemyStats pro kontrolu imunity
     public bool IsEvading()
     {
         return isEvading;
     }
 
-    // --- POMOCNÉ FUNKCE ---
-
-    bool CheckForProjectiles()
-    {
-        return Physics2D.OverlapCircle(transform.position, 4f, projectileLayer) != null;
-    }
-
-    bool HasLineOfSight()
-    {
-        RaycastHit2D hit = Physics2D.Raycast(transform.position, player.position - transform.position, aggroRange, obstacleLayer);
-        return hit.collider == null;
-    }
-
     void SetPatrolPoint()
     {
+        // Najde náhodný bod kolem startovní pozice
         Vector3 p = startPosition + (Vector3)UnityEngine.Random.insideUnitSphere * patrolRadius;
         NavMeshHit hit;
         if (NavMesh.SamplePosition(p, out hit, patrolRadius, NavMesh.AllAreas))
@@ -364,8 +400,7 @@ public class SkeletonArcherAI : MonoBehaviour
 
     void RotateTowards(Vector3 target)
     {
-        // Otáčení pomocí Scale X (Flip)
-        // Používáme baseScale, abychom zachovali velikost z Inspectoru
+        // Otočení spritu pomocí Scale X
         if (target.x < transform.position.x)
             transform.localScale = new Vector3(-Mathf.Abs(baseScale.x), baseScale.y, baseScale.z);
         else
@@ -380,9 +415,13 @@ public class SkeletonArcherAI : MonoBehaviour
 
     void OnDrawGizmosSelected()
     {
-        Gizmos.color = Color.yellow; Gizmos.DrawWireSphere(transform.position, aggroRange);
-        Gizmos.color = Color.red; Gizmos.DrawWireSphere(transform.position, idealRange);
-        Gizmos.color = Color.blue; Gizmos.DrawWireSphere(transform.position, fleeDistance);
-        Gizmos.color = Color.cyan; Gizmos.DrawWireSphere(transform.position, 4f);
+        Gizmos.color = Color.yellow;
+        Gizmos.DrawWireSphere(transform.position, aggroRange);
+
+        Gizmos.color = Color.red;
+        Gizmos.DrawWireSphere(transform.position, idealRange);
+
+        Gizmos.color = Color.cyan;
+        if (currentState == State.Search) Gizmos.DrawWireSphere(lastKnownPosition, searchRadius);
     }
 }

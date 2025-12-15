@@ -55,13 +55,23 @@ public class BaseEnemyAI : MonoBehaviour
         }
     }
 
-    // Spoleèné pomocné metody
     protected void RotateTowards(Vector3 target)
     {
+        // Zjistíme aktuální velikost (absolutní hodnotu, aby byla vždy kladná)
+        float sizeX = Mathf.Abs(transform.localScale.x);
+        float sizeY = transform.localScale.y;
+        float sizeZ = transform.localScale.z;
+
         if (target.x < transform.position.x)
-            transform.localScale = new Vector3(-1, 1, 1);
+        {
+            // Doleva (otoèíme X do mínusu)
+            transform.localScale = new Vector3(-sizeX, sizeY, sizeZ);
+        }
         else
-            transform.localScale = new Vector3(1, 1, 1);
+        {
+            // Doprava (X je plusové)
+            transform.localScale = new Vector3(sizeX, sizeY, sizeZ);
+        }
     }
 
     protected bool HasLineOfSight(LayerMask obstacleLayer)
