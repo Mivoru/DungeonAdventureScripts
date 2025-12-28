@@ -182,7 +182,7 @@ public class PlayerMovement : MonoBehaviour
 
         Vector2 startPosition = rb.position;
         Vector2 endPosition = startPosition + dashDirection * dashDistance;
-
+        AudioManager.instance.PlaySFX("PlayerDash");
         float startTime = Time.time;
 
         while (Time.time < startTime + dashDuration)
@@ -201,5 +201,27 @@ public class PlayerMovement : MonoBehaviour
 
         yield return new WaitForSeconds(finalCooldown);
         canDash = true;
+    }
+    public void PlayFootstep()
+    {
+        // 1. Pojistka: Pokud se hráč nehýbe (nedrží WASD), nehraj zvuk.
+        // To řeší problém, kdy animace "dobíhá", ale hráč už stojí.
+        if (movementInput.sqrMagnitude < 0.1f) return;
+
+        // 2. Zjistíme základní rychlost (bez sprintu)
+        float baseSpeed = (stats != null) ? stats.movementSpeed : 5f;
+
+        // 3. Porovnáme aktuální rychlost se základní
+        // Přidáváme malou rezervu (+0.1f) pro jistotu porovnání floatů
+        if (currentSpeed > baseSpeed + 0.1f)
+        {
+            // Pokud je rychlost vyšší než základní -> BĚŽÍME
+            AudioManager.instance.PlaySFX("PlayerRun");
+        }
+        else
+        {
+            // Pokud je rychlost normální -> JDEME
+            AudioManager.instance.PlaySFX("PlayerWalk");
+        }
     }
 }

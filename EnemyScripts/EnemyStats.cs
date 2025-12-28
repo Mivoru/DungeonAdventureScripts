@@ -124,7 +124,7 @@ public class EnemyStats : CharacterStats
         if (healthBar != null) healthBar.UpdateBar(currentHealth, maxHealth);
     }
 
-    public override void TakeDamage(int damage)
+    public override void TakeDamage(int damage, bool isCrit = false)
     {
         GiantAI giant = GetComponent<GiantAI>();
         if (giant != null && giant.IsInvulnerable())
@@ -138,8 +138,14 @@ public class EnemyStats : CharacterStats
         Animator anim = GetComponent<Animator>();
         SkeletonWarriorAI warriorAI = GetComponent<SkeletonWarriorAI>();
         if (warriorAI != null && anim != null && anim.GetBool("IsBlocking")) return;
+        // ZAVOLÁME FLOATING TEXT
+        if (FloatingTextManager.instance != null)
+        {
+            FloatingTextManager.instance.ShowDamage(damage, transform.position, isCrit);
+        }
 
-        base.TakeDamage(damage);
+        base.TakeDamage(damage, isCrit); // Zavolá CharacterStats (ubere HP)
+        
 
         if (anim != null) anim.SetTrigger("Hit");
 

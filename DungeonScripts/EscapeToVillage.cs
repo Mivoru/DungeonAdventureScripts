@@ -2,10 +2,11 @@ using UnityEngine;
 using UnityEngine.UI;
 using UnityEngine.InputSystem;
 
+
 public class EscapeToVillage : MonoBehaviour
 {
     [Header("Settings")]
-    public float holdTime = 2.0f; // Zkráceno na 2s pro lepší testování
+    public float holdTime = 5.0f; // Nastaveno na 5s podle zadání
     public Image progressImage;
     public GameObject uiPanel;
 
@@ -30,30 +31,33 @@ public class EscapeToVillage : MonoBehaviour
             return;
         }
 
-        // Èteme input (funguje i když je Time.timeScale = 0)
+        // Èteme input (zda držíš klávesu K)
         bool isHoldingEsc = escapeAction.ReadValue<float>() > 0.5f;
 
-        // Kontrola stání
+        // Kontrola stání (hráè se nesmí hýbat, aby mohl utéct)
         bool isStandingStill = (playerRb != null && playerRb.linearVelocity.magnitude < 0.1f);
 
+        // Musí držet klávesu A ZÁROVEÒ stát na místì
         if (isHoldingEsc && isStandingStill)
         {
             if (!uiPanel.activeSelf) uiPanel.SetActive(true);
 
-            // Používáme unscaledDeltaTime, aby to fungovalo i pøi pauze
-            timer += Time.unscaledDeltaTime;
+            // ZMÌNA: Používáme Time.deltaTime místo unscaledDeltaTime.
+            // Pokud hru pauzneš (ESC), timer se zastaví (což je správnì).
+            timer += Time.deltaTime;
 
             if (progressImage) progressImage.fillAmount = timer / holdTime;
 
             if (timer >= holdTime)
             {
+                AudioManager.instance.PlaySFX("Portal");
                 TeleportHome();
                 timer = 0;
             }
         }
         else
         {
-            // Reset
+            // Reset, pokud pustíš klávesu nebo se pohneš
             if (timer > 0)
             {
                 timer = 0;
@@ -68,16 +72,25 @@ public class EscapeToVillage : MonoBehaviour
         playerInput = FindFirstObjectByType<PlayerInput>();
         if (playerInput != null)
         {
-            escapeAction = playerInput.actions.FindAction("Escape");
+            // ZMÌNA: Tady musíme hledat pøesný název tvé nové akce
+            escapeAction = playerInput.actions.FindAction("EscapeFromDungeon");
+
             playerRb = playerInput.GetComponent<Rigidbody2D>();
         }
     }
 
     void TeleportHome()
     {
-        Debug.Log("Útìk do vesnice!");
-        // Reset èasu pro jistotu
+        Debug.Log("Útìk do vesnice dokonèen!");
+
+        // Reset èasu (pro jistotu, kdyby se nìco pokazilo s TimeScale)
         Time.timeScale = 1f;
+
+        // Uložit hru pøed odchodem (volitelné, ale doporuèené)
+        if (SaveManager.instance != null)
+        {
+            SaveManager.instance.SaveGame();
+        }
 
         if (GameManager.instance != null)
         {

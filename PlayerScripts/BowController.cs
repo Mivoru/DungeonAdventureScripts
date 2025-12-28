@@ -54,14 +54,25 @@ public class BowController : MonoBehaviour
 
         // --- VÝPOČET POŠKOZENÍ ---
         // Získáme sílu hráče
+        // Získáme sílu hráče a zjistíme Crit
         PlayerStats stats = GetComponentInParent<PlayerStats>();
-        int playerBaseDmg = (stats != null) ? stats.baseDamage : 0;
+        int playerBaseDmg = 0;
+        bool isCrit = false;
 
-        // Získáme sílu luku (podle nátahu)
+        if (stats != null)
+        {
+            playerBaseDmg = stats.baseDamage;
+            // Trik: Zavoláme GetCalculatedDamage s 0, abychom zjistili, jestli padl Crit na base damage
+            // Nebo si vytvoříme pomocnou metodu. Pro teď stačí:
+            int dummy;
+            dummy = stats.GetCalculatedDamage(0, out isCrit);
+        }
+
+        // ... Výpočet totalDamage ...
         int bowDamage = Mathf.RoundToInt(Mathf.Lerp(minDamage, maxDamage, chargePower));
-
-        // Celkové poškození
         int totalDamage = playerBaseDmg + bowDamage;
+
+        if (isCrit) totalDamage = Mathf.RoundToInt(totalDamage * (stats ? stats.critDamage : 1.5f));
         // --------------------------
 
         // Výpočet rychlosti šípu
@@ -82,6 +93,7 @@ public class BowController : MonoBehaviour
         if (arrowScript != null)
         {
             arrowScript.damage = totalDamage;
+            arrowScript.isCrit = isCrit; // Předáme informaci šípu!
         }
 
         // Nastavení cooldownu

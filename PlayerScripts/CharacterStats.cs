@@ -21,16 +21,6 @@ public class CharacterStats : MonoBehaviour
         UpdateHealthUI();
     }
 
-    public virtual void TakeDamage(int damage)
-    {
-        currentHealth -= damage;
-        UpdateHealthUI();
-
-        if (currentHealth <= 0)
-        {
-            Die();
-        }
-    }
 
     public virtual void Heal(int amount)
     {
@@ -51,5 +41,12 @@ public class CharacterStats : MonoBehaviour
     public virtual void Die()
     {
         Debug.Log($"{transform.name} zemøel.");
+    }
+    public virtual void TakeDamage(int damage, bool isCrit = false)
+    {
+        currentHealth -= damage;
+        UpdateHealthUI();
+
+        if (currentHealth <= 0) Die();
     }
 }

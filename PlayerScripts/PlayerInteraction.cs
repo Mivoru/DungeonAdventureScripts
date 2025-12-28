@@ -82,6 +82,7 @@ public class PlayerInteraction : MonoBehaviour
                     table.Interact();
                     return;
                 }
+
             }
         }
     }
@@ -93,6 +94,16 @@ public class PlayerInteraction : MonoBehaviour
             if (InventoryManager.instance != null)
             {
                 InventoryManager.instance.OnToggleInventory(context);
+            }
+        }
+    }
+    public void OnQuickHeal(InputAction.CallbackContext context)
+    {
+        if (context.performed)
+        {
+            if (InventoryManager.instance != null)
+            {
+                InventoryManager.instance.TryQuickHeal();
             }
         }
     }

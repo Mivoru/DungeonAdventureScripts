@@ -13,7 +13,7 @@ public class SceneTransition : MonoBehaviour
         {
             // Tady mùžeme v budoucnu uložit hru
             // SaveGame(); 
-
+            AudioManager.instance.PlaySFX("Portal");
             Debug.Log($"Portál aktivován! Cestuji do: {sceneToLoad}");
             SceneManager.LoadScene(sceneToLoad);
         }

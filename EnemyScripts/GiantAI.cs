@@ -15,21 +15,21 @@ public class GiantAI : BaseEnemyAI
     public float throwCooldown = 5f;
     public float summonCooldown = 12f;
 
-    [Header("Damage Settings (NOVÉ)")]
-    public int slapDamage = 15;       // Facka
-    public int slamDamage = 30;       // Zemìtøesení
-    public int throwRockDamage = 20;  // Hod kamenem
-    public int rollingRockDamage = 25; // Valící se kámen
+    [Header("Damage Settings")]
+    public int slapDamage = 15;
+    public int slamDamage = 30;
+    public int throwRockDamage = 20;
+    public int rollingRockDamage = 25;
 
     [Header("Projectile Settings")]
-    public float throwRockSpeed = 15f;      // Rychlost hodu
-    public float minRollingSpeed = 6f;      // Min rychlost kutálení
-    public float maxRollingSpeed = 10f;     // Max rychlost kutálení
+    public float throwRockSpeed = 15f;
+    public float minRollingSpeed = 6f;
+    public float maxRollingSpeed = 10f;
 
     [Header("Attacks Prefabs")]
-    public GameObject rockPrefab;        // Throw Rock Prefab
+    public GameObject rockPrefab;
     public Transform throwPoint;
-    public GameObject rollingRockPrefab; // Rolling Rock Prefab
+    public GameObject rollingRockPrefab;
     public Transform[] summonPoints;
 
     [Header("Area Damage (Slam)")]
@@ -37,24 +37,28 @@ public class GiantAI : BaseEnemyAI
     public LayerMask playerLayer;
 
     // Èasovaèe a stavy
-    private float nextSlapTime;
-    private float nextSlamTime;
-    private float nextThrowTime;
-    private float nextSummonTime;
-
+    private float nextActionTime;
     private bool phase50 = false;
     private bool phase25 = false;
     private bool phase05 = false;
-
     private bool isInvulnerable = false;
-    private float nextActionTime;
 
     private int[] meleePattern = { 1, 1, 2 };
 
     public override void Start()
     {
         base.Start();
-        nextSummonTime = Time.time + 5f;
+        // Malá prodleva na startu
+        nextActionTime = Time.time + 2f;
+    }
+
+    // --- OPRAVA 1: RESET PØI STUNU ---
+    // Když EnemyStats vypne tento skript (Hit/Stun), musíme vyèistit stav
+    void OnDisable()
+    {
+        isActionInProgress = false;
+        if (agent != null) agent.isStopped = false;
+        StopAllCoroutines(); // Pro jistotu
     }
 
     public override void Update()
@@ -63,23 +67,34 @@ public class GiantAI : BaseEnemyAI
 
         if (player == null || isActionInProgress) return;
 
-        // 1. FÁZE
+        // 1. FÁZE (Priorita)
         float hpPercent = (float)stats.currentHealth / stats.maxHealth;
         if (!phase50 && hpPercent <= 0.5f) { StartCoroutine(SummonPhase(50)); return; }
         if (!phase25 && hpPercent <= 0.25f) { StartCoroutine(SummonPhase(25)); return; }
         if (!phase05 && hpPercent <= 0.05f) { StartCoroutine(SummonPhase(5)); return; }
 
-        // 2. COOLDOWN POHYBU
-        if (Time.time < nextActionTime)
-        {
-            agent.isStopped = false;
-            agent.SetDestination(player.position);
-            return;
-        }
-
         float dist = Vector2.Distance(transform.position, player.position);
 
-        // 3. ROZHODOVÁNÍ
+        // 2. COOLDOWN & POHYB (OPRAVA CHOVÁNÍ)
+        if (Time.time < nextActionTime)
+        {
+            // Pokud jsme v cooldownu, ale hráè je DALEKO -> Jdeme k nìmu
+            if (dist > meleeRange)
+            {
+                agent.isStopped = false;
+                agent.SetDestination(player.position);
+            }
+            else
+            {
+                // Pokud jsme v cooldownu a hráè je BLÍZKO -> STÙJ A ÈEKEJ (netlaè se do nìj)
+                agent.isStopped = true;
+                agent.velocity = Vector2.zero;
+                // RotateTowards se volá v base.Update(), takže se na hráèe bude stále otáèet
+            }
+            return; // Èekáme na nabití útoku
+        }
+
+        // 3. ROZHODOVÁNÍ ÚTOKÙ (Když není cooldown)
         if (dist <= meleeRange)
         {
             PerformMeleeAttack();
@@ -90,6 +105,8 @@ public class GiantAI : BaseEnemyAI
         }
         else
         {
+            // Hráè je daleko nebo v "hluchém místì" (mezi melee a throw) -> Jdi k nìmu
+            agent.isStopped = false;
             agent.SetDestination(player.position);
         }
     }
@@ -107,9 +124,13 @@ public class GiantAI : BaseEnemyAI
     {
         isActionInProgress = true;
         agent.isStopped = true;
-        anim.SetInteger("AttackType", 1);
+        anim.SetInteger("AttackType", 1); // Spustí animaci
+
+        // Zde èekáme na animaci. Pokud tì nìkdo trefí a dá Stun, 
+        // zavolá se OnDisable() a tato Coroutine se bezpeènì ukonèí.
         yield return new WaitForSeconds(1.0f);
-        anim.SetInteger("AttackType", 0);
+
+        anim.SetInteger("AttackType", 0); // Konec animace
         isActionInProgress = false;
         nextActionTime = Time.time + slapCooldown;
     }
@@ -146,19 +167,18 @@ public class GiantAI : BaseEnemyAI
         isInvulnerable = true;
         agent.isStopped = true;
 
-        Debug.Log($"GIANT: FÁZE {percent}%! SUMMON!");
         anim.SetInteger("AttackType", 4);
 
-        for (int i = 0; i < 10; i++)
+        // Spawn kamenù
+        for (int i = 0; i < 8; i++)
         {
             SpawnRollingRock();
-            yield return new WaitForSeconds(0.5f);
+            yield return new WaitForSeconds(0.6f);
         }
 
         anim.SetInteger("AttackType", 0);
         isInvulnerable = false;
         isActionInProgress = false;
-        agent.isStopped = false;
         nextActionTime = Time.time + 2f;
     }
 

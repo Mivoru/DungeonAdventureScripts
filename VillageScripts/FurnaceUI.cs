@@ -44,6 +44,7 @@ public class FurnaceUI : MonoBehaviour
 
         if (InventoryManager.instance != null)
             InventoryManager.instance.OpenInventoryForTrading(inventoryOffset);
+        if (TimeUI.instance != null) TimeUI.instance.ShowClock(false); // Schovat
     }
 
     public void CloseFurnace()
@@ -57,6 +58,7 @@ public class FurnaceUI : MonoBehaviour
             // --- PØIDÁNO: Zrušit drag ---
             InventoryManager.instance.CancelActiveDrag();
         }
+        if (TimeUI.instance != null) TimeUI.instance.ShowClock(true); // Zobrazit
     }
 
     public void UpdateVisuals()
@@ -76,6 +78,7 @@ public class FurnaceUI : MonoBehaviour
         if (currentFurnace.inputItem != null)
         {
             var recipe = RecipeManager.instance.GetFurnaceRecipe(currentFurnace.inputItem);
+            AudioManager.instance.PlaySFX("Furnace");
             if (recipe != null) maxCookTime = recipe.cookTime;
         }
         progressFill.fillAmount = currentFurnace.cookTimer / maxCookTime;
@@ -135,4 +138,5 @@ public class FurnaceUI : MonoBehaviour
             UpdateVisuals();
         }
     }
+    
 }

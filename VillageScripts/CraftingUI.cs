@@ -59,6 +59,7 @@ public class CraftingUI : MonoBehaviour
             InventoryManager.instance.OpenInventoryForTrading(inventoryOffset);
 
         RefreshRecipeList();
+        if (TimeUI.instance != null) TimeUI.instance.ShowClock(false); // Schovat
     }
 
     public void CloseCrafting()
@@ -72,7 +73,9 @@ public class CraftingUI : MonoBehaviour
         {
             InventoryManager.instance.ResetInventoryPosition();
             InventoryManager.instance.CancelActiveDrag();
+
         }
+        if (TimeUI.instance != null) TimeUI.instance.ShowClock(true); // Zobrazit
     }
 
     // --- SEZNAM RECEPTÙ ---
@@ -189,6 +192,7 @@ public class CraftingUI : MonoBehaviour
         {
             RecipeManager.instance.ConsumeIngredients(selectedRecipe, amount);
             InventoryManager.instance.AddItem(selectedRecipe.resultItem, selectedRecipe.resultAmount * amount);
+            AudioManager.instance.PlaySFX("Craft");
             Debug.Log($"Crafted: {selectedRecipe.resultItem.itemName} x{amount}");
         }
 

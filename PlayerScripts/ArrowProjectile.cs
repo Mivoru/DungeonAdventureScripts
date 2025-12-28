@@ -9,6 +9,7 @@ public class ArrowProjectile : MonoBehaviour
     [Header("Layers Detection")]
     public LayerMask enemyLayers;    // Koho má zranit
     public LayerMask obstacleLayers; // O co se má rozbít
+    public bool isCrit = false;
 
     private Rigidbody2D rb;
     private bool hasHit = false;
@@ -53,7 +54,7 @@ public class ArrowProjectile : MonoBehaviour
 
             if (targetStats != null)
             {
-                targetStats.TakeDamage(damage);
+                targetStats.TakeDamage(damage, isCrit);
                 hasHit = true;
                 Destroy(gameObject); // Zničit šíp
             }

@@ -25,8 +25,14 @@ public class GameManager : MonoBehaviour
     // Sem v Inspectoru pøetáhneš Floor_1, Floor_2, Floor_3...
     public List<DungeonLevelData> allLevels;
 
+    void Start()
+    {
+        
+    }
+
     void Awake()
     {
+        // Singleton (aby byl jen jeden manažer)
         if (instance == null)
         {
             instance = this;
@@ -35,6 +41,41 @@ public class GameManager : MonoBehaviour
         else
         {
             Destroy(gameObject);
+        }
+    }
+    void OnEnable()
+    {
+        SceneManager.sceneLoaded += OnSceneLoaded;
+    }
+    void OnDisable()
+    {
+        SceneManager.sceneLoaded -= OnSceneLoaded;
+    }
+
+    // Tato metoda se spustí AUTOMATICKY pokaždé, když se zmìní scéna
+    void OnSceneLoaded(Scene scene, LoadSceneMode mode)
+    {
+        Debug.Log("--- NOVÁ SCÉNA NAÈTENA: " + scene.name + " ---");
+
+        // 1. Pokud jsme v Main Menu, nic nenaèítáme
+        if (scene.name == "MainMenu")
+        {
+            return;
+        }
+
+        // 2. Pokud jsme ve Vesnici (nebo Dungeonu), zkontrolujeme Load
+        if (SaveManager.instance != null)
+        {
+            // Používáme tu statickou promìnnou
+            if (SaveManager.shouldLoadAfterSceneChange)
+            {
+                Debug.Log("Detekován požadavek na CONTINUE. Spouštím odpoèet...");
+                StartCoroutine(DelayedLoad());
+            }
+            else
+            {
+                Debug.Log("Žádný požadavek na naètení (New Game).");
+            }
         }
     }
 
@@ -124,7 +165,20 @@ public class GameManager : MonoBehaviour
             }
         }
     }
+    System.Collections.IEnumerator DelayedLoad()
+    {
+        // Poèkáme, aby se stihly inicializovat ostatní skripty
+        yield return new WaitForSeconds(0.1f);
 
+        Debug.Log("Teï volám SaveManager.LoadGame()...");
+        if (SaveManager.instance != null)
+        {
+            SaveManager.instance.LoadGame();
+
+            // Dùležité: Po naètení resetujeme vlajku, aby se to nenaèítalo poøád dokola
+            SaveManager.shouldLoadAfterSceneChange = false;
+        }
+    }
     public void ReturnToVillage()
     {
         SceneManager.LoadScene(villageSceneName, LoadSceneMode.Single);

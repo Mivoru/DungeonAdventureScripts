@@ -52,6 +52,7 @@ public class ShopUI : MonoBehaviour
         UpdateCoinsText();
         GenerateShopItems();
         StartCoroutine(ForceOpenRoutine());
+        if (TimeUI.instance != null) TimeUI.instance.ShowClock(false);
     }
 
     IEnumerator ForceOpenRoutine()
@@ -81,7 +82,9 @@ public class ShopUI : MonoBehaviour
             InventoryManager.instance.ResetInventoryPosition();
             // --- PØIDÁNO: Zrušit drag ---
             InventoryManager.instance.CancelActiveDrag();
+
         }
+        if (TimeUI.instance != null) TimeUI.instance.ShowClock(true);
     }
 
     public void TrySellItem(ItemData item, int slotIndex)
@@ -90,6 +93,7 @@ public class ShopUI : MonoBehaviour
         int sellPrice = Mathf.Max(1, item.price / 2);
         if (PlayerStats.instance != null) PlayerStats.instance.currentCoins += sellPrice;
         if (InventoryManager.instance != null) InventoryManager.instance.RemoveItem(slotIndex, 1);
+        AudioManager.instance.PlaySFX("Sell");
         UpdateCoinsText();
     }
 
@@ -101,6 +105,7 @@ public class ShopUI : MonoBehaviour
             if (InventoryManager.instance.AddItem(item, 1))
             {
                 PlayerStats.instance.currentCoins -= item.price;
+                AudioManager.instance.PlaySFX("Buy");
                 UpdateCoinsText();
             }
         }

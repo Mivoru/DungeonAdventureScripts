@@ -2,11 +2,22 @@ using UnityEngine;
 
 public enum ItemType
 {
-    Material,   // Suroviny (Kosti, Gel, Rudy) - Nedìlají nic
-    Consumable, // Spotøební (Lektvary) - Zmizí a dají efekt
-    Weapon,     // Zbranì (Meè, Luk) - Nasadí se
-    Tool        // Nástroje (Krumpáè) - Nasadí se
+    Material,
+    Consumable,
+    Weapon,
+    Tool
 }
+
+// --- NOVÉ: Typ spotøebního pøedmìtu ---
+public enum ConsumableType
+{
+    Health,      // Doplòuje životy
+    Mana,        // Doplòuje manu (do budoucna)
+    DamageBoost, // Zvyšuje sílu
+    SpeedBoost,  // Zvyšuje rychlost
+    None         // Není to potion (jídlo, atd.)
+}
+// --------------------------------------
 
 [CreateAssetMenu(fileName = "New Item", menuName = "Inventory/Item")]
 public class ItemData : ScriptableObject
@@ -18,9 +29,14 @@ public class ItemData : ScriptableObject
     [Header("Type")]
     public ItemType itemType;
 
+    // --- NOVÉ ---
+    [Header("Consumable Settings")]
+    public ConsumableType consumableType; // Tady v Inspectoru vybereš "Health" nebo "DamageBoost"
+    // ------------
+
     [Header("Action Stats")]
-    public int valueAmount; // Pro Potion = Heal, Pro Zbraò = Damage
-    public string weaponID; // "Sword", "Bow", "Pickaxe" (Pro spárování s WeaponManagerem)
+    public int valueAmount;
+    public string weaponID;
 
     [Header("Stacking")]
     public bool isStackable = true;

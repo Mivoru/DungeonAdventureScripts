@@ -27,7 +27,66 @@ public class InventoryManager : MonoBehaviour
     public GameObject tooltipPanel;
     public TMP_Text tooltipText;
     public Vector3 tooltipOffset = new Vector3(15, -15, 0); // Posun od myši
+    [Header("Item Database")]
+    public List<ItemData> allGameItems;
 
+    private string encryptionKey = "Moje46Super56Tajne66Heslo123";
+
+    private string EncryptDecrypt(string text)
+    {
+        // Jednoduchá XOR šifra
+        System.Text.StringBuilder modifiedData = new System.Text.StringBuilder();
+        for (int i = 0; i < text.Length; i++)
+        {
+            modifiedData.Append((char)(text[i] ^ encryptionKey[i % encryptionKey.Length]));
+        }
+        return modifiedData.ToString();
+    }
+    // --- Metody pro SaveManager ---
+
+    public List<InventorySaveData> GetInventorySaveData()
+    {
+        List<InventorySaveData> saveDataList = new List<InventorySaveData>();
+
+        for (int i = 0; i < slots.Length; i++)
+        {
+            if (slots[i].item != null)
+            {
+                InventorySaveData data = new InventorySaveData();
+                data.itemName = slots[i].item.itemName; // Ukládáme jméno
+                data.amount = slots[i].amount;
+                data.slotIndex = i;
+                saveDataList.Add(data);
+            }
+        }
+        return saveDataList;
+    }
+
+    public void LoadInventoryFromSave(List<InventorySaveData> savedItems)
+    {
+        ClearInventory(); // Nejdøív vše vymažeme
+
+        foreach (InventorySaveData savedSlot in savedItems)
+        {
+            // Najdeme ItemData podle jména v naší "databázi"
+            ItemData foundItem = allGameItems.Find(x => x.itemName == savedSlot.itemName);
+
+            if (foundItem != null)
+            {
+                // Vložíme ho pøesnì na stejné místo
+                if (savedSlot.slotIndex < slots.Length)
+                {
+                    slots[savedSlot.slotIndex].item = foundItem;
+                    slots[savedSlot.slotIndex].amount = savedSlot.amount;
+                }
+            }
+            else
+            {
+                Debug.LogWarning("Nenašel jsem item: " + savedSlot.itemName + ". Máš ho v allGameItems?");
+            }
+        }
+        UpdateUI();
+    }
     [System.Serializable]
     public class SlotData
     {
@@ -134,6 +193,15 @@ public class InventoryManager : MonoBehaviour
         if (inventoryPanel != null)
         {
             inventoryPanel.SetActive(isOpen);
+
+            // --- NOVÉ: Ovládání hodin ---
+            // Když je inventáø otevøený (isOpen == true), hodiny se schovají (ShowClock false)
+            if (TimeUI.instance != null)
+            {
+                TimeUI.instance.ShowClock(!isOpen);
+            }
+            // ---------------------------
+
             if (isOpen)
             {
                 if (inventoryRect != null) inventoryRect.anchoredPosition = defaultPosition;
@@ -145,7 +213,6 @@ public class InventoryManager : MonoBehaviour
             }
         }
     }
-
     public bool AddItem(ItemData item, int amount = 1)
     {
         if (item.isStackable)
@@ -173,7 +240,7 @@ public class InventoryManager : MonoBehaviour
             slots[emptyIndex].amount = add;
             amount -= add;
         }
-
+        AudioManager.instance.PlaySFX("PlayerPickup");
         UpdateUI();
         return true;
     }
@@ -282,6 +349,11 @@ public class InventoryManager : MonoBehaviour
     {
         isOpen = true;
         inventoryPanel.SetActive(true);
+
+        // --- NOVÉ: Schovat hodiny (pro jistotu) ---
+        if (TimeUI.instance != null) TimeUI.instance.ShowClock(false);
+        // ------------------------------------------
+
         if (inventoryRect != null)
         {
             inventoryRect.anchoredPosition = offsetPosition;
@@ -306,6 +378,10 @@ public class InventoryManager : MonoBehaviour
         isOpen = false;
         if (inventoryPanel != null) inventoryPanel.SetActive(false);
 
+        // --- NOVÉ: Zobrazit hodiny zpìt ---
+        if (TimeUI.instance != null) TimeUI.instance.ShowClock(true);
+        // ----------------------------------
+
         // Zrušit drag, aby item nezùstal viset
         CancelActiveDrag();
     }
@@ -328,8 +404,14 @@ public class InventoryManager : MonoBehaviour
     {
         if (PlayerStats.instance != null)
         {
-            PlayerStats.instance.Heal(item.valueAmount);
-            RemoveItem(slotIndex, 1);
+            // Tady to házelo chybu, pokud byl Heal 'void'. 
+            // Teï když je 'bool', bude to fungovat.
+            bool success = PlayerStats.instance.Heal(item.valueAmount);
+            AudioManager.instance.PlaySFX("PotionUse");
+            if (success)
+            {
+                RemoveItem(slotIndex, 1);
+            }
         }
     }
 
@@ -387,6 +469,12 @@ public class InventoryManager : MonoBehaviour
             // Posuneme panel na pozici myši + offset
             tooltipPanel.transform.position = Mouse.current.position.ReadValue() + (Vector2)tooltipOffset;
         }
+       
+        // --- NOVÉ: QUICK HEAL (H) ---
+        if (Keyboard.current.hKey.wasPressedThisFrame)
+        {
+            TryQuickHeal();
+        }
     }
 
     // Tuto metodu zavolá Slot, když na nìj najedeš
@@ -409,5 +497,26 @@ public class InventoryManager : MonoBehaviour
         {
             tooltipPanel.SetActive(false);
         }
+    }
+
+    public void TryQuickHeal()
+    {
+        // Projdeme sloty a hledáme KONKRÉTNÌ Health Potion
+        for (int i = 0; i < slots.Length; i++)
+        {
+            if (slots[i].item != null &&
+                slots[i].item.itemType == ItemType.Consumable &&
+                slots[i].item.consumableType == ConsumableType.Health) // Kontrola typu!
+            {
+                // Našli jsme Health Potion -> Použijeme ho
+                UseItem(i);
+                // Volitelné: Pøehrát zvuk pití
+                Debug.Log($"Quick Heal: Použit {slots[i].item.itemName}");
+                return; // Použijeme jen jeden a konèíme
+            }
+        }
+
+        Debug.Log("Nemáš žádný Health Potion!");
+        // Tady by se hodilo pøehrát zvuk "Error" nebo vyhodit text na obrazovku
     }
 }

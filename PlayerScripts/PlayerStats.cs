@@ -37,6 +37,12 @@ public class PlayerStats : CharacterStats
     [Header("Economy")]
     public int currentCoins = 100;
 
+    // --- TOTO PØIDEJ (CHYBÌLO TI TO) ---
+    [Header("Healing Settings")]
+    public float healCooldown = 3f;
+    private float nextHealTime = 0f;
+    // ------------------------------------
+
     // --- SNAPSHOT DATA (Pro návrat po smrti) ---
     private int savedLevel;
     private int savedXP;
@@ -199,6 +205,7 @@ public class PlayerStats : CharacterStats
         currentXP += amount;
         while (currentXP >= requiredXP)
         {
+            AudioManager.instance.PlaySFX("LevelUp");
             LevelUp();
         }
         UpdateLevelUI();
@@ -225,7 +232,7 @@ public class PlayerStats : CharacterStats
         if (levelUpUI != null) levelUpUI.UpdateUI();
     }
 
-    void UpdateLevelUI()
+    public void UpdateLevelUI()
     {
         if (xpBar != null) xpBar.UpdateBar(currentXP, requiredXP);
         if (levelText != null) levelText.text = "Lvl " + currentLevel;
@@ -254,13 +261,19 @@ public class PlayerStats : CharacterStats
     // --- 5. BOJ & OBRANA ---
 
     // Pøepisujeme TakeDamage, abychom zapoèítali Defense
-    public override void TakeDamage(int damage)
+    public override void TakeDamage(int damage, bool isCrit = false)
     {
-        if (isDead) return; // Pokud už jsem mrtvý, ignoruj další rány
-
+        if (isDead) return;
         int finalDamage = Mathf.Max(1, damage - defense);
-        base.TakeDamage(finalDamage);
 
+        // Hráè taky mùže vidìt kolik dostal (volitelné)
+        if (FloatingTextManager.instance != null)
+            FloatingTextManager.instance.ShowDamage(finalDamage, transform.position, false);
+
+        base.TakeDamage(finalDamage, isCrit);
+        AudioManager.instance.PlaySFX("PlayerHit");
+
+        
         // Pøehrát animaci jen pokud ještì žijeme
         if (currentHealth > 0)
         {
@@ -269,14 +282,15 @@ public class PlayerStats : CharacterStats
         }
     }
 
-    // Výpoèet útoku (Crit) - volá meè/luk
-    public int GetCalculatedDamage(int weaponDamage)
+    // Zmìna: používáme 'out bool isCrit' abychom vrátili dvì hodnoty
+    public int GetCalculatedDamage(int weaponDamage, out bool isCrit)
     {
         int totalBase = baseDamage + weaponDamage;
+        isCrit = false;
 
         if (UnityEngine.Random.Range(0f, 100f) <= critChance)
         {
-            // Debug.Log("CRITICAL HIT!");
+            isCrit = true;
             return Mathf.RoundToInt(totalBase * critDamage);
         }
         return totalBase;
@@ -288,7 +302,7 @@ public class PlayerStats : CharacterStats
     {
         // POJISTKA: Pokud už probíhá smrt, nic nedìlej a odejdi
         if (isDead) return;
-
+        AudioManager.instance.PlaySFX("PlayerDeath");
         isDead = true; // Zvedneme vlajku "Jsem mrtvý"
         Debug.Log("Hráè zemøel (Poprvé)!");
 
@@ -300,6 +314,8 @@ public class PlayerStats : CharacterStats
             {
                 activeDeathScreen = Instantiate(deathScreenPrefab, canvas.transform);
                 activeDeathScreen.transform.SetAsLastSibling();
+                AudioManager.instance.PlaySFX("PlayerDeath");
+
             }
         }
 
@@ -424,5 +440,34 @@ public class PlayerStats : CharacterStats
         FindUIElements();
         UpdateHealthUI();
         UpdateLevelUI();
+    }
+    // DÙLEŽITÉ: Musí zde být 'bool', nikoliv 'void'
+    public bool Heal(int amount)
+    {
+        // 1. Kontrola Cooldownu
+        if (Time.time < nextHealTime)
+        {
+            Debug.Log("Léèení je v cooldownu!");
+            return false; // Vracíme false = nepovedlo se
+        }
+
+        // 2. Kontrola Plného zdraví
+        if (currentHealth >= maxHealth)
+        {
+            Debug.Log("Máš plné životy!");
+            return false; // Vracíme false = nepovedlo se
+        }
+
+        // 3. Samotné léèení
+        currentHealth += amount;
+        if (currentHealth > maxHealth) currentHealth = maxHealth;
+
+        nextHealTime = Time.time + healCooldown;
+        UpdateHealthUI();
+
+        if (FloatingTextManager.instance != null)
+            FloatingTextManager.instance.ShowDamage(amount, transform.position, false);
+
+        return true; // Vracíme true = povedlo se
     }
 }

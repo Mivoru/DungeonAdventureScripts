@@ -78,14 +78,22 @@ public class LevelUpUI : MonoBehaviour
             bool isActive = !uiPanel.activeSelf;
             uiPanel.SetActive(isActive);
 
+            // NOVÉ: Vypínání/Zapínání hodin
+            // Pokud je menu aktivní (isActive == true), chceme hodiny schovat (ShowClock false)
+            if (TimeUI.instance != null)
+            {
+                TimeUI.instance.ShowClock(!isActive);
+            }
+
             if (isActive)
             {
                 UpdateUI();
-                // Volitelné: Zastavit hru pøi otevøení menu
-                // Time.timeScale = 0f;
+                // Volitelné: Zastavit èas
+                // Time.timeScale = 0f; 
             }
             else
             {
+                // Volitelné: Pustit èas
                 // Time.timeScale = 1f;
             }
         }

@@ -57,6 +57,7 @@ public class SwordAttack : MonoBehaviour
             // Mùžeme poslat rychlost do animátoru (pokud máš parametr AttackSpeed)
             playerAnim.SetFloat("AttackSpeed", currentAttackSpeed);
             playerAnim.SetTrigger("Attack");
+            AudioManager.instance.PlaySFX("SwordSwing");
         }
 
         // 3. Aktualizace pozice hitboxu (podle toho kam koukáme)
@@ -83,9 +84,17 @@ public class SwordAttack : MonoBehaviour
 
     void DealConeDamage()
     {
-        // A) Výpoèet poškození
+        // A) Výpoèet poškození + Crit
         PlayerStats stats = GetComponentInParent<PlayerStats>();
-        int finalDamage = (stats != null) ? stats.GetCalculatedDamage(weaponDamage) : weaponDamage;
+
+        int finalDamage = weaponDamage;
+        bool isCrit = false;
+
+        if (stats != null)
+        {
+            // Tady získáme i boolean isCrit
+            finalDamage = stats.GetCalculatedDamage(weaponDamage, out isCrit);
+        }
 
         // B) Zjištìní smìru (z Animátoru, protože transform se netoèí)
         Vector2 facingDir = Vector2.down;
@@ -119,7 +128,8 @@ public class SwordAttack : MonoBehaviour
                     EnemyStats eStats = hit.GetComponent<EnemyStats>();
                     if (eStats != null)
                     {
-                        eStats.TakeDamage(finalDamage);
+                        // Pøedáme finalDamage I isCrit
+                        eStats.TakeDamage(finalDamage, isCrit);
                     }
                 }
             }

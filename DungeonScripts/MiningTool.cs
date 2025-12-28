@@ -33,7 +33,7 @@ public class MiningTool : MonoBehaviour
 
         // 1. Logika Tìžby (Výseè)
         MineCone();
-
+        AudioManager.instance.PlaySFX("Mine");
         // 2. Animace nástroje (vizuální otoèení)
         float timer = 0f;
         Quaternion targetRot = Quaternion.Euler(0, 0, -50f);
