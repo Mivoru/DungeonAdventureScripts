@@ -25,6 +25,8 @@ public class SaveData
     public int daysPassed;
     public float timeOfDay;
     public List<string> unlockedFloors; // Názvy odemèených pater
+    public int floorsUnlocked = 1; 
+
 
     // --- INVENTÁØ ---
     public List<InventorySaveData> inventoryItems;

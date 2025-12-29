@@ -2,24 +2,31 @@ using System.Collections.Generic;
 using UnityEngine;
 using TMPro;
 
+// 1. Definujeme si druhy nepøátel
+public enum EnemyRank
+{
+    Weak,   // Slime, Krysa (Málo XP)
+    Normal, // Skeleton Warrior/Archer (Støední XP)
+    Elite,  // Ent, Miniboss (Hodnì XP)
+    Boss    // Hlavní boss (Obøí XP)
+}
+
 public class EnemyStats : CharacterStats
 {
-    [Header("Enemy Data (Volitelné)")]
-    public EnemyData data; // Pokud sem nìco dáš, pøepíše to hodnoty níže
+    [Header("Enemy Data")]
+    public EnemyData data;
 
     [Header("Enemy Info")]
     public string enemyName = "Enemy";
+    public EnemyRank rank = EnemyRank.Weak; // Tady v Inspectoru vybereš, co to je
 
     [Header("Enemy Level")]
     public int level = 1;
 
     [Header("Scaling Settings")]
     public int healthPerLevel = 10;
-    public int damagePerLevel = 3;
-    public int xpRewardPerLevel = 5;
-
-    [Header("Rewards")]
-    public int baseXpReward = 20;
+    public int damagePerLevel = 2;
+    // xpRewardPerLevel už nepotøebujeme tolik øešit, vypoèítáme to dynamicky podle Ranku
 
     [System.Serializable]
     public class LootEntry
@@ -31,19 +38,16 @@ public class EnemyStats : CharacterStats
     [Header("Loot Settings")]
     public GameObject lootPrefab;
     public List<LootEntry> lootTable;
-
-    [Header("Drop Scatter")]
     public float scatterRadius = 1.0f;
 
     [Header("UI")]
     public TMP_Text levelText;
     public TMP_Text nameText;
 
-    // Interní promìnné pro bezpeèné škálování
     private int _startMaxHealth;
     private int _startBaseDamage;
     private bool _initialized = false;
-
+    private EnemyAudio enemyAudio;
     void Awake()
     {
         // 1. Pokud máme Data (Scriptable Object), naèteme je a PØEPÍŠEME Inspector
@@ -89,6 +93,7 @@ public class EnemyStats : CharacterStats
         }
 
         base.Start();
+        enemyAudio = GetComponent<EnemyAudio>();
         UpdateUI();
     }
 
@@ -145,7 +150,10 @@ public class EnemyStats : CharacterStats
         }
 
         base.TakeDamage(damage, isCrit); // Zavolá CharacterStats (ubere HP)
-        
+        if (enemyAudio != null && currentHealth > 0)
+        {
+            enemyAudio.PlayHurt();
+        }
 
         if (anim != null) anim.SetTrigger("Hit");
 
@@ -183,17 +191,88 @@ public class EnemyStats : CharacterStats
 
     public override void Die()
     {
-        base.Die();
-        GameObject player = GameObject.FindGameObjectWithTag("Player");
-        if (player != null)
+        if (enemyAudio != null)
         {
-            int finalXp = baseXpReward + ((level - 1) * xpRewardPerLevel);
-            player.GetComponent<PlayerStats>()?.AddXP(finalXp);
+            // Trik: Vytvoøíme doèasný objekt jen pro zvuk smrti, pokud se tento znièí
+            AudioSource.PlayClipAtPoint(enemyAudio.deathSound, transform.position);
+
+            // Nebo pokud používáš animaci smrti a Destroy je zpoždìné, staèí:
+            // enemyAudio.PlayDeath(); 
         }
+        base.Die();
+
+        if (PlayerStats.instance != null)
+        {
+            // 1. Vypoèítáme XP podle Ranku a Levelu nepøítele
+            int xpAmount = CalculateXP();
+
+            // 2. Aplikujeme penalizaci, pokud je hráè moc silný
+            int finalXP = ApplyLevelGapPenalty(xpAmount);
+
+            Debug.Log($"Enemy {rank} (Lvl {level}) killed. Base: {xpAmount}, Final: {finalXP}");
+
+            PlayerStats.instance.AddXP(finalXP);
+        }
+
         DropLoot();
         Destroy(gameObject);
     }
+    int CalculateXP()
+    {
+        int baseVal = 0;
+        int scaleVal = 0;
 
+        // Nastavení hodnot podle toho, jaký je to typ nepøítele
+        switch (rank)
+        {
+            case EnemyRank.Weak:    // Slime
+                baseVal = 10;
+                scaleVal = 2;       // +2 XP za každý level navíc
+                break;
+            case EnemyRank.Normal:  // Skeleton
+                baseVal = 30;
+                scaleVal = 5;       // +5 XP za level
+                break;
+            case EnemyRank.Elite:   // Ent
+                baseVal = 80;
+                scaleVal = 10;
+                break;
+            case EnemyRank.Boss:    // Boss
+                baseVal = 500;
+                scaleVal = 50;
+                break;
+        }
+
+        // Vzorec: Základ + (Level nepøítele * škálování)
+        return baseVal + ((level - 1) * scaleVal);
+    }
+
+    int ApplyLevelGapPenalty(int xpAmount)
+    {
+        int playerLvl = PlayerStats.instance.currentLevel;
+        int enemyLvl = level; // Tady se bere TENHLE level tohoto nepøítele
+
+        // Pokud je nepøítel silnìjší nebo stejný, dostaneš 100% XP
+        if (enemyLvl >= playerLvl) return xpAmount;
+
+        // Pokud je hráè silnìjší, poèítáme rozdíl
+        int diff = playerLvl - enemyLvl;
+
+        // Tolerance: Pokud jsi o 1-3 levely výš, ještì ti XP nesebere
+        if (diff <= 3) return xpAmount;
+
+        // Pokud je rozdíl vìtší než 3 levely:
+        // Za každý další level dolù -20% XP
+        // Pøíklad: Hráè 15, Enemy 5 -> Rozdíl 10. (10 - 3 tolerance) = 7.
+        // 7 * 0.2 = 1.4 (140% penalizace) -> 0 XP.
+
+        float penalty = (diff - 3) * 0.2f;
+        float multiplier = 1.0f - penalty;
+
+        if (multiplier <= 0) return 1; // Vždy dostaneš aspoò 1 XP (symbolicky)
+
+        return Mathf.RoundToInt(xpAmount * multiplier);
+    }
     void DropLoot()
     {
         if (lootPrefab == null || lootTable == null) return;

@@ -39,6 +39,11 @@ public class SkeletonArcherAI : MonoBehaviour
     public LayerMask projectileLayer;
     public LayerMask playerLayer;
 
+    [Header("Panic Evasion Settings")]
+    public float panicDistance = 4f;    // Přejmenováno z evadeDistance, aby to sedělo s Update
+    public float timeToPanic = 1.0f;    // Přejmenováno z timeToEvade
+    private float closeRangeTimer = 0f;
+
     // --- STAVY ---
     private enum State { Patrol, Chase, Shoot, Evade, Search, Flee }
     private State currentState = State.Patrol;
@@ -80,15 +85,39 @@ public class SkeletonArcherAI : MonoBehaviour
         if (player == null) return;
         if (isActionInProgress) return;
 
-        // 1. KONTROLA ÚHYBU (Priorita - uhýbá před šípy)
+        // Spočítáme vzdálenost HNED na začátku, protože ji potřebujeme pro více podmínek
+        float distToPlayer = Vector2.Distance(transform.position, player.position);
+        bool canSeePlayer = CheckLineOfSight();
+
+        // 1. KONTROLA ÚHYBU PŘED PROJEKTILY (Priorita - uhýbá před šípy)
         if (Time.time >= nextEvadeTime && CheckForProjectiles())
         {
+            // Resetujeme timer paniky, protože už uhýbáme kvůli šípu
+            closeRangeTimer = 0f;
             StartCoroutine(PerformEvasion());
             return;
         }
 
-        float distToPlayer = Vector2.Distance(transform.position, player.position);
-        bool canSeePlayer = CheckLineOfSight();
+        // 1.5. KONTROLA PANIKY (Hráč je moc dlouho blízko)
+        // Pokud je hráč blíž než "panicDistance"
+        if (distToPlayer < panicDistance)
+        {
+            // Přičítáme čas
+            closeRangeTimer += Time.deltaTime;
+
+            // Pokud jsme u něj déle než 1s A ZÁROVEŇ nemáme cooldown na úskok
+            if (closeRangeTimer >= timeToPanic && Time.time >= nextEvadeTime)
+            {
+                closeRangeTimer = 0f; // Reset časovače
+                StartCoroutine(PerformEvasion()); // Spustíme stejný úskok
+                return; // Ukončíme Update, ať neřeší střelbu/chůzi
+            }
+        }
+        else
+        {
+            // Hráč odešel z nebezpečné zóny -> resetujeme počítadlo
+            closeRangeTimer = 0f;
+        }
 
         // 2. ROZHODOVÁNÍ STAVŮ
         switch (currentState)
@@ -172,10 +201,11 @@ public class SkeletonArcherAI : MonoBehaviour
 
     void ShootLogic(float dist, bool see)
     {
+        // Zastavíme pohyb, abychom mohli mířit
         agent.isStopped = true;
         agent.velocity = Vector2.zero;
 
-        // Pokud hráče nevidí, nemůže střílet -> jde ho hledat
+        // 1. ZTRÁTA VIDITELNOSTI -> HLEDAT
         if (!see)
         {
             currentState = State.Search;
@@ -183,7 +213,7 @@ public class SkeletonArcherAI : MonoBehaviour
             return;
         }
 
-        // Pokud hráč utekl z dostřelu -> pronásledovat
+        // 2. MOC DALEKO -> PRONÁSLEDOVAT
         if (dist > idealRange * 1.2f)
         {
             currentState = State.Chase;
@@ -191,18 +221,29 @@ public class SkeletonArcherAI : MonoBehaviour
             return;
         }
 
-        // Pokud je hráč moc blízko -> útěk
+        // 3. STŘELBA (HLAVNÍ ZMĚNA - PRIORITA)
+        // Zjistíme, jestli máme nabito
+        bool readyToShoot = Time.time >= nextShootTime;
+
+        if (readyToShoot)
+        {
+            // I když je hráč u nás (dist < fleeDistance),
+            // raději mu dáme ránu, než začneme utíkat.
+            StartCoroutine(ShootRoutine());
+
+            // Nastavíme cooldown (přidal jsem malou náhodu, ať to není strojové)
+            nextShootTime = Time.time + shootCooldown + UnityEngine.Random.Range(-0.1f, 0.1f);
+
+            return; // Vystřelili jsme, v tomto framu už nic jiného neřešíme
+        }
+
+        // 4. ÚTĚK (Až když nemůžeme střílet)
+        // Pokud máme cooldown A ZÁROVEŇ je hráč moc blízko, tak utíkáme.
         if (dist < fleeDistance)
         {
             currentState = State.Flee;
             agent.isStopped = false;
             return;
-        }
-
-        if (Time.time >= nextShootTime)
-        {
-            StartCoroutine(ShootRoutine());
-            nextShootTime = Time.time + shootCooldown;
         }
     }
 
@@ -331,33 +372,73 @@ public class SkeletonArcherAI : MonoBehaviour
     IEnumerator PerformEvasion()
     {
         isActionInProgress = true;
-        isEvading = true; // Imunita
-        anim.SetTrigger("Evade");
+        isEvading = true;
 
-        // Jednoduchý úskok do boku
-        Vector3 dodgeDirection = transform.right;
-        if (UnityEngine.Random.value > 0.5f) dodgeDirection = -dodgeDirection;
-
-        // Manuální pohyb bez NavMeshe (Dash)
+        // 1. Zastavíme standardní pohyb
         agent.isStopped = true;
         agent.ResetPath();
+        agent.velocity = Vector2.zero;
 
-        float dashDuration = 0.4f;
-        float dashSpeed = 12f;
+        // 2. Animace
+        anim.SetTrigger("Evade");
+
+        // 3. Výpočet směru (Od hráče)
+        Vector3 dirFromPlayer = (transform.position - player.position).normalized;
+        float dashDistance = 5f; // Prodloužíme úskok
+        float dashTime = 0.25f;  // Zrychlíme úskok (aby mohl dřív střílet)
+
+        // 4. KONTROLA ZDI (Raycast na NavMeshi)
+        // Zkusíme uskočit dozadu. Pokud je tam zeď, zkusíme doprava/doleva.
+        Vector3 targetPos = transform.position + (dirFromPlayer * dashDistance);
+        NavMeshHit hit;
+
+        // NavMesh.Raycast vrátí true, pokud narazí do "zdi" v NavMeshi
+        if (NavMesh.Raycast(transform.position, targetPos, out hit, NavMesh.AllAreas))
+        {
+            // Cesta dozadu je blokovaná! Zkusíme uskočit do boku.
+            Vector3 sideDir = Vector3.Cross(dirFromPlayer, Vector3.forward); // Kolmice
+            targetPos = transform.position + (sideDir * dashDistance);
+
+            // Zkontrolujeme i bok
+            if (NavMesh.Raycast(transform.position, targetPos, out hit, NavMesh.AllAreas))
+            {
+                // I bok je blokovaný -> skočíme jen kousek (tam, kde jsme narazili)
+                targetPos = hit.position;
+            }
+        }
+
+        // 5. Samotný pohyb (Lerp)
+        Vector3 startPos = transform.position;
         float timer = 0f;
 
-        while (timer < dashDuration)
+        while (timer < dashTime)
         {
-            agent.Move(dodgeDirection * dashSpeed * Time.deltaTime);
+            float t = timer / dashTime;
+            // Použijeme lineární pohyb, je to pro dash čitelnější
+            transform.position = Vector3.Lerp(startPos, targetPos, t);
+
             timer += Time.deltaTime;
             yield return null;
         }
 
-        agent.isStopped = false;
-        nextEvadeTime = Time.time + evadeCooldown;
+        // Pojistka: Ujistíme se, že skončil přesně v cíli
+        transform.position = targetPos;
 
+        // 6. Reset
+        agent.isStopped = false;
+
+        // Trik: Okamžitě se otočíme na hráče, abychom mohli hned střílet
+        RotateTowards(player.position);
+
+        nextEvadeTime = Time.time + evadeCooldown;
         isActionInProgress = false;
         isEvading = false;
+
+        // Pokud jsme dostatečně daleko, přepneme rovnou do střelby (ne Chase)
+        if (Vector2.Distance(transform.position, player.position) <= idealRange)
+        {
+            currentState = State.Shoot;
+        }
     }
 
     // --- EVENTY Z ANIMACÍ ---

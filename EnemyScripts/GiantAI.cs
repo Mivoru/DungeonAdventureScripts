@@ -57,8 +57,15 @@ public class GiantAI : BaseEnemyAI
     void OnDisable()
     {
         isActionInProgress = false;
-        if (agent != null) agent.isStopped = false;
-        StopAllCoroutines(); // Pro jistotu
+
+        // --- OPRAVA CHYBY ---
+        // Než sáhnieme na agenta, musíme se ujistit, že existuje, je aktivní a HLAVNÌ že je na NavMeshi.
+        if (agent != null && agent.isActiveAndEnabled && agent.isOnNavMesh)
+        {
+            agent.isStopped = false;
+        }
+
+        StopAllCoroutines();
     }
 
     public override void Update()

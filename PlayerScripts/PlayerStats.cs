@@ -36,12 +36,10 @@ public class PlayerStats : CharacterStats
 
     [Header("Economy")]
     public int currentCoins = 100;
+    [Header("UI Settings")]
+    public Vector3 damageOffset = new Vector3(0, 1.0f, 0); // Pozice pro èervená èísla
+    public Vector3 healOffset = new Vector3(0, 1.5f, 0);   // Pozice pro zelená èísla
 
-    // --- TOTO PØIDEJ (CHYBÌLO TI TO) ---
-    [Header("Healing Settings")]
-    public float healCooldown = 3f;
-    private float nextHealTime = 0f;
-    // ------------------------------------
 
     // --- SNAPSHOT DATA (Pro návrat po smrti) ---
     private int savedLevel;
@@ -190,11 +188,22 @@ public class PlayerStats : CharacterStats
     {
         while (true)
         {
-            yield return new WaitForSeconds(1f);
-            // Regenerujeme jen když žijeme
+            yield return new WaitForSeconds(1f); // Jednou za sekundu
+
             if (!isDead && currentHealth < maxHealth && currentHealth > 0 && regeneration > 0)
             {
-                Heal(Mathf.RoundToInt(regeneration));
+                // VZOREC: (MaxHP * Procenta) / 100
+                // Pøíklad: Máš 100 HP, regen je 1.0 (znamená 1%).
+                // 100 * 1 / 100 = 1 HP.
+                // Pokud máš 1000 HP -> 10 HP.
+
+                float amountToHeal = (maxHealth * regeneration) / 100f;
+
+                // Musíme ošetøit, aby to healovalo aspoò 1, pokud je výsledek malý (napø. 0.5)
+                int finalHeal = Mathf.Max(1, Mathf.RoundToInt(amountToHeal));
+
+                // Voláme Heal, ale s parametrem 'isRegen = true', abychom mohli vypnout text, kdyby to spamovalo
+                Heal(finalHeal);
             }
         }
     }
@@ -215,14 +224,23 @@ public class PlayerStats : CharacterStats
     {
         currentLevel++;
         currentXP -= requiredXP;
-        requiredXP = Mathf.RoundToInt(requiredXP * 1.2f);
+        // Ztížení levelování (zmìò 1.2f na 1.3f pokud chceš hardcore)
+        requiredXP = Mathf.RoundToInt(requiredXP * 1.5f);
 
-        // Auto-vylepšení
-        maxHealth = Mathf.RoundToInt(maxHealth * healthGrowthMultiplier);
+        // --- ZVÝŠENÍ ODMÌNY ZA LEVEL ---
+
+        // 1. HP: Místo násobení (což dìlá obrovská èísla pozdìji) pøièti pevnou hodnotu + bonus
+        // Pùvodnì: maxHealth * 1.1f;
+        // Novì: +10 HP fixnì + 5 % navíc
+        int healthIncrease = 10 + Mathf.RoundToInt(maxHealth * 0.05f);
+        maxHealth += healthIncrease;
         currentHealth = maxHealth;
-        baseDamage += damageGrowthAmount;
 
-        // Body pro hráèe
+        // 2. Damage: Pøidej víc damage
+        // Pùvodnì: baseDamage += 2;
+        baseDamage += 3; // Zkus dát 3 nebo 4, to je na zaèátku hodnì znát
+
+        // 3. Stat Body
         statPoints += 2;
 
         Debug.Log($"LEVEL UP! Level {currentLevel}. Body: {statPoints}");
@@ -246,12 +264,12 @@ public class PlayerStats : CharacterStats
         switch (statName)
         {
             case "Defense": defense += 1; break;
-            case "CritChance": critChance += 2f; break;
-            case "CritDamage": critDamage += 0.1f; break;
-            case "AttackSpeed": attackSpeed += 0.05f; break;
-            case "Dash": dashCooldownRed += 0.1f; break;
-            case "Luck": luck += 0.2f; break;
-            case "Regen": regeneration += 1f; break;
+            case "CritChance": critChance += 0.5f; break;
+            case "CritDamage": critDamage += 0.05f; break;
+            case "AttackSpeed": attackSpeed += 0.01f; break;
+            case "Dash": dashCooldownRed += 0.025f; break;
+            case "Luck": luck += 0.1f; break;
+            case "Regen": regeneration += 0.1f; break;
         }
 
         statPoints--;
@@ -266,15 +284,16 @@ public class PlayerStats : CharacterStats
         if (isDead) return;
         int finalDamage = Mathf.Max(1, damage - defense);
 
-        // Hráè taky mùže vidìt kolik dostal (volitelné)
         if (FloatingTextManager.instance != null)
-            FloatingTextManager.instance.ShowDamage(finalDamage, transform.position, false);
+        {
+            // ZDE POUŽIJEME damageOffset
+            // (false na konci znamená, že to není heal, ale damage)
+            FloatingTextManager.instance.ShowDamage(finalDamage, transform.position + damageOffset, isCrit);
+        }
 
         base.TakeDamage(finalDamage, isCrit);
         AudioManager.instance.PlaySFX("PlayerHit");
 
-        
-        // Pøehrát animaci jen pokud ještì žijeme
         if (currentHealth > 0)
         {
             Animator anim = GetComponent<Animator>();
@@ -442,32 +461,31 @@ public class PlayerStats : CharacterStats
         UpdateLevelUI();
     }
     // DÙLEŽITÉ: Musí zde být 'bool', nikoliv 'void'
-    public bool Heal(int amount)
+    public void Heal(int amount)
     {
-        // 1. Kontrola Cooldownu
-        if (Time.time < nextHealTime)
-        {
-            Debug.Log("Léèení je v cooldownu!");
-            return false; // Vracíme false = nepovedlo se
-        }
-
-        // 2. Kontrola Plného zdraví
-        if (currentHealth >= maxHealth)
-        {
-            Debug.Log("Máš plné životy!");
-            return false; // Vracíme false = nepovedlo se
-        }
-
-        // 3. Samotné léèení
         currentHealth += amount;
         if (currentHealth > maxHealth) currentHealth = maxHealth;
 
-        nextHealTime = Time.time + healCooldown;
         UpdateHealthUI();
 
         if (FloatingTextManager.instance != null)
-            FloatingTextManager.instance.ShowDamage(amount, transform.position, false);
+        {
+            // ZDE POUŽIJEME healOffset
+            FloatingTextManager.instance.ShowHeal(amount, transform.position + healOffset);
+        }
+    }
+    public void RecalculateRequiredXP()
+    {
+        // Resetujeme na základ
+        requiredXP = 150; // Tvoje startovní hodnota
 
-        return true; // Vracíme true = povedlo se
+        // Nasimulujeme rùst køivky až do aktuálního levelu
+        for (int i = 1; i < currentLevel; i++)
+        {
+            requiredXP = Mathf.RoundToInt(requiredXP * 1.5f); // Tvùj násobiè (1.5f)
+        }
+
+        Debug.Log($"Level {currentLevel} naèten. Pøepoèítané requiredXP: {requiredXP}");
+        UpdateLevelUI();
     }
 }

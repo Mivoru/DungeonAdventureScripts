@@ -105,14 +105,21 @@ public class LevelUpUI : MonoBehaviour
         PlayerStats p = PlayerStats.instance;
 
         if (pointsText) pointsText.text = $"Points: {p.statPoints}";
-
         if (defenseText) defenseText.text = p.defense.ToString();
-        if (critChanceText) critChanceText.text = $"{p.critChance}%";
+
+        // UPRAVENO: Pøidal jsem :F1, protože teï pøidáváme po 0.5%, tak a to jde vidìt (napø. 5.5%)
+        if (critChanceText) critChanceText.text = $"{p.critChance:F1}%";
+
+        // Toto by mìlo fungovat. Pokud se èíslo nemìní, zkontroluj název v tlaèítku (On Click).
         if (critDmgText) critDmgText.text = $"{p.critDamage:F1}x";
+
         if (atkSpeedText) atkSpeedText.text = $"{p.attackSpeed:F2}x";
         if (dashText) dashText.text = $"-{p.dashCooldownRed:F1}s";
         if (luckText) luckText.text = $"{p.luck:F1}x";
-        if (regenText) regenText.text = $"{p.regeneration}/s";
+
+        // UPRAVENO: Teï zobrazujeme procenta
+        // F1 zajistí, že uvidíš "0.2% / s" místo dlouhého èísla
+        if (regenText) regenText.text = $"{p.regeneration:F1}% / s";
 
         bool canUpgrade = p.statPoints > 0;
         foreach (var btn in upgradeButtons)

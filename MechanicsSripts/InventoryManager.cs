@@ -29,6 +29,9 @@ public class InventoryManager : MonoBehaviour
     public Vector3 tooltipOffset = new Vector3(15, -15, 0); // Posun od myši
     [Header("Item Database")]
     public List<ItemData> allGameItems;
+    [Header("Cooldown Settings")]
+    public float potionCooldown = 15f; // Pøejmenoval jsem to na potionCooldown pro jasnost
+    private float nextPotionTime = 0f;
 
     private string encryptionKey = "Moje46Super56Tajne66Heslo123";
 
@@ -393,26 +396,72 @@ public class InventoryManager : MonoBehaviour
 
         switch (item.itemType)
         {
-            case ItemType.Consumable: ConsumeItem(item, slotIndex); break;
+            case ItemType.Consumable:
+                ConsumeItem(item, slotIndex); // Voláme naši vylepšenou metodu
+                break;
             case ItemType.Weapon:
-            case ItemType.Tool: EquipItem(item); break;
-            case ItemType.Material: Debug.Log("S tímto pøedmìtem nejde nic dìlat."); break;
+            case ItemType.Tool:
+                EquipItem(item);
+                break;
+            case ItemType.Material:
+                Debug.Log("S tímto pøedmìtem nejde nic dìlat.");
+                break;
         }
     }
 
     void ConsumeItem(ItemData item, int slotIndex)
     {
-        if (PlayerStats.instance != null)
+        // 1. KROK: Kontrola Cooldownu
+        if (Time.time < nextPotionTime)
         {
-            // Tady to házelo chybu, pokud byl Heal 'void'. 
-            // Teï když je 'bool', bude to fungovat.
-            bool success = PlayerStats.instance.Heal(item.valueAmount);
-            AudioManager.instance.PlaySFX("PotionUse");
-            if (success)
-            {
-                RemoveItem(slotIndex, 1);
-            }
+            float remaining = nextPotionTime - Time.time;
+            Debug.Log($"Nemùžeš pít! Cooldown: {remaining:F1}s");
+            return; // Konec
         }
+
+        // 2. KROK: Kontrola Plného zdraví
+        if (PlayerStats.instance.currentHealth >= PlayerStats.instance.maxHealth)
+        {
+            Debug.Log("Máš plné životy!");
+            return; // Konec
+        }
+
+        // 3. KROK: Výpoèet léèení (ZDE BYLA CHYBA)
+        int healAmount = 0;
+
+        // Rozhodování podle názvu pøedmìtu (Musí se shodovat s názvem v ItemData)
+        if (item.itemName.Contains("Small")) // Napø. "Small Potion"
+        {
+            // 20 % z Maximálních životù
+            healAmount = Mathf.RoundToInt(PlayerStats.instance.maxHealth * 0.20f);
+        }
+        else if (item.itemName.Contains("Large")) // Napø. "Large Potion"
+        {
+            // 40 % z Maximálních životù
+            healAmount = Mathf.RoundToInt(PlayerStats.instance.maxHealth * 0.40f);
+        }
+        else // Obyèejný "Health Potion"
+        {
+            // 30 % z Maximálních životù
+            healAmount = Mathf.RoundToInt(PlayerStats.instance.maxHealth * 0.30f);
+        }
+
+        // Pojistka: Vždy vyléèit alespoò 5 HP (aby to na levelu 1 nedávalo 0 nebo 1)
+        healAmount = Mathf.Max(5, healAmount);
+
+        // Provedeme léèení
+        PlayerStats.instance.Heal(healAmount);
+
+        // 4. KROK: Zvuk
+        if (AudioManager.instance != null) AudioManager.instance.PlaySFX("PotionUse");
+
+        // 5. KROK: Nastavení cooldownu
+        nextPotionTime = Time.time + potionCooldown;
+
+        // 6. KROK: Odebrání pøedmìtu
+        RemoveItemByName(item, 1);
+
+        Debug.Log($"Lektvar vypit (+{healAmount} HP). Další za {potionCooldown}s.");
     }
 
     void EquipItem(ItemData item)
@@ -501,22 +550,34 @@ public class InventoryManager : MonoBehaviour
 
     public void TryQuickHeal()
     {
-        // Projdeme sloty a hledáme KONKRÉTNÌ Health Potion
+        // Pokud máš input check tady, nech ho tady.
+        // if (Input.GetKeyDown(KeyCode.H)) { ... }
+
         for (int i = 0; i < slots.Length; i++)
         {
-            if (slots[i].item != null &&
-                slots[i].item.itemType == ItemType.Consumable &&
-                slots[i].item.consumableType == ConsumableType.Health) // Kontrola typu!
+            // 1. POJISTKA: Nejdøív zkontroluj, jestli ve slotu VÙBEC NÌCO JE
+            // Bez tohohle to spadne, když narazí na prázdný slot.
+            if (slots[i].item != null)
             {
-                // Našli jsme Health Potion -> Použijeme ho
-                UseItem(i);
-                // Volitelné: Pøehrát zvuk pití
-                Debug.Log($"Quick Heal: Použit {slots[i].item.itemName}");
-                return; // Použijeme jen jeden a konèíme
+                // 2. Kontrola, jestli je to lektvar (podle typu nebo jména)
+                // (Zmìò podmínku podle toho, jak poznáš potion ty - ItemType nebo Name)
+                if (slots[i].item.itemType == ItemType.Consumable || slots[i].item.itemName.Contains("Potion"))
+                {
+                    // Uložíme si info o itemu pøedtím, než ho sníme (volitelné, pro logy)
+                    string itemName = slots[i].item.itemName;
+
+                    // 3. Vypít lektvar
+                    // Tady se volá ConsumeItem -> RemoveItem -> slot se stane NULL (pokud byl poslední)
+                    UseItem(i);
+
+                    // 4. DÙLEŽITÉ: OKAMŽITÝ NÁVRAT!
+                    // Musíme vyskoèit z funkce. Už jsme se vyléèili.
+                    // Kdybychom pokraèovali v cyklu nebo se snažili èíst slots[i].item, spadne to.
+                    return;
+                }
             }
         }
 
-        Debug.Log("Nemáš žádný Health Potion!");
-        // Tady by se hodilo pøehrát zvuk "Error" nebo vyhodit text na obrazovku
+        Debug.Log("Žádný lektvar v inventáøi nenalezen!");
     }
 }

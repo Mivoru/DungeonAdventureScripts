@@ -10,6 +10,7 @@ public class SaveManager : MonoBehaviour
     private string savePath;
     public static bool shouldLoadAfterSceneChange = false;    // Tajný klíè (mùžeš si vymyslet cokoliv)
     private string encryptionKey = "Moje37Super47Tajne57Heslo123";
+    public int floorsUnlocked = 1;
 
     private string EncryptDecrypt(string text)
     {
@@ -70,7 +71,7 @@ public class SaveManager : MonoBehaviour
     public void SaveGame()
     {
         SaveData data = new SaveData();
-
+        data.floorsUnlocked = floorsUnlocked;
         // 1. ZÍSKÁNÍ DAT Z PLAYER STATS
         if (PlayerStats.instance != null)
         {
@@ -153,7 +154,14 @@ public class SaveManager : MonoBehaviour
             Debug.LogError("Save file je poškozený nebo neplatný (Anti-Cheat).");
             return;
         }
+        floorsUnlocked = data.floorsUnlocked;
 
+        // Pokud máš GameManager, pošli mu to taky:
+        if (GameManager.instance != null)
+        {
+            // OPRAVA: V GameManageru se to jmenuje 'maxUnlockedFloor'
+            GameManager.instance.maxUnlockedFloor = floorsUnlocked;
+        }
         // Pokud se to povedlo, aplikujeme data:
         if (PlayerStats.instance != null)
         {
@@ -181,6 +189,7 @@ public class SaveManager : MonoBehaviour
             if (p.levelUpUI != null) p.levelUpUI.UpdateUI();
             PlayerStats.instance.UpdateLevelUI(); 
             PlayerStats.instance.UpdateHealthUI();
+            p.RecalculateRequiredXP();
         }
 
         if (TimeManager.instance != null)
@@ -196,7 +205,17 @@ public class SaveManager : MonoBehaviour
 
         Debug.Log("Hra naètena!");
     }
-
+    public void UnlockFloor(int floorNumber)
+    {
+        // Uložíme jen pokud je to nové patro (napø. jdeme do 2. patra a máme 1)
+        if (floorNumber > floorsUnlocked)
+        {
+            floorsUnlocked = floorNumber;
+            // Mùžeme rovnou uložit hru, aby o to hráè nepøišel
+            SaveGame();
+            Debug.Log($"Postup uložen! Odemèeno patro: {floorsUnlocked}");
+        }
+    }
     public void DeleteSave()
     {
         if (File.Exists(savePath)) File.Delete(savePath);
