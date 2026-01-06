@@ -78,7 +78,6 @@ public class FurnaceUI : MonoBehaviour
         if (currentFurnace.inputItem != null)
         {
             var recipe = RecipeManager.instance.GetFurnaceRecipe(currentFurnace.inputItem);
-            AudioManager.instance.PlaySFX("Furnace");
             if (recipe != null) maxCookTime = recipe.cookTime;
         }
         progressFill.fillAmount = currentFurnace.cookTimer / maxCookTime;

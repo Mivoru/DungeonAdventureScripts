@@ -1,6 +1,6 @@
 using UnityEngine;
 using UnityEngine.Tilemaps;
-using UnityEngine.AI; // D˘leûitÈ pro NavMeshObstacle
+using UnityEngine.AI;
 using System.Collections;
 using System.Collections.Generic;
 
@@ -15,20 +15,19 @@ public class BossRoomManager : MonoBehaviour
     public GameObject bossPrefab;
     private GameObject activeBoss;
 
+    // ZMÃNA: Tady uû nenÌ û·dn· hudba, vöe ¯eöÌ AudioManager centr·lnÏ.
+
     [Header("Room Locking (Gen)")]
-    public TileBase wallTile; // Sem dej WallBase1_RuleTile (ten s kolizÌ)
-    public int roomSize = 25; // PolomÏr od st¯edu
+    public TileBase wallTile;
+    public int roomSize = 25;
 
     [Header("Navigation")]
-    public GameObject navMeshBarrierPrefab; // <--- SEM PÿET¡HNI TU BARI…RU Z KROKU 1
+    public GameObject navMeshBarrierPrefab;
 
     private bool isLocked = false;
     private Tilemap wallsTilemap;
-
-    // Seznamy pro ˙klid po boji
     private List<Vector3Int> addedWalls = new List<Vector3Int>();
     private List<GameObject> activeBarriers = new List<GameObject>();
-
     private bool bossSpawned = false;
 
     void Start()
@@ -48,42 +47,38 @@ public class BossRoomManager : MonoBehaviour
     IEnumerator LockRoomSequence()
     {
         isLocked = true;
-
-        // 1. »ek·me, aû hr·Ë vbÏhne dovnit¯
         yield return new WaitForSeconds(1.0f);
 
         Debug.Log("ZAMYK¡M MÕSTNOST!");
 
-        // 2. ZruöÌme moûnost ˙tÏku p¯es ESC
+        // --- ZMÃNA: ÿekneme AudioManageru, aù nÏco vybere ---
+        if (AudioManager.instance != null)
+        {
+            AudioManager.instance.PlayRandomBossTheme();
+        }
+        // ----------------------------------------------------
+
         EscapeToVillage escapeScript = FindFirstObjectByType<EscapeToVillage>();
         if (escapeScript != null) escapeScript.enabled = false;
 
-        // 3. VYGENERUJEME ZDI A BARI…RY
+        // ZDI A BARI…RY
         if (wallsTilemap != null && wallTile != null)
         {
             Vector3Int center = wallsTilemap.WorldToCell(transform.position);
             int r = roomSize;
-
             for (int x = -r; x <= r; x++)
             {
                 for (int y = -r; y <= r; y++)
                 {
-                    // ÿeöÌme jen obvod
                     if (Mathf.Abs(x) == r || Mathf.Abs(y) == r)
                     {
                         Vector3Int pos = center + new Vector3Int(x, y, 0);
-
-                        // Pokud tam nenÌ zeÔ (je to vchod), zazdÌme to
                         if (!wallsTilemap.HasTile(pos))
                         {
-                            // A) Grafick· a fyzick· zeÔ (pro hr·Ëe)
                             wallsTilemap.SetTile(pos, wallTile);
                             addedWalls.Add(pos);
-
-                            // B) NavMesh BariÈra (pro monstra)
                             if (navMeshBarrierPrefab != null)
                             {
-                                // P¯evedeme grid pozici na svÏtovou a vycentrujeme (+0.5)
                                 Vector3 worldPos = wallsTilemap.CellToWorld(pos) + new Vector3(0.5f, 0.5f, 0);
                                 GameObject barrier = Instantiate(navMeshBarrierPrefab, worldPos, Quaternion.identity);
                                 activeBarriers.Add(barrier);
@@ -94,7 +89,7 @@ public class BossRoomManager : MonoBehaviour
             }
         }
 
-        // 4. Spawn Bosse
+        // SPAWN BOSSE
         if (activeBoss == null && bossPrefab != null)
         {
             activeBoss = Instantiate(bossPrefab, bossSpawnPoint.position, Quaternion.identity);
@@ -115,27 +110,23 @@ public class BossRoomManager : MonoBehaviour
         isLocked = false;
         Debug.Log("MÕSTNOST ODEM»ENA!");
 
-        // 1. Povolit ESC
+        // N¡VRAT K AMBIENTU
+        if (AudioManager.instance != null)
+        {
+            AudioManager.instance.PlayMusic("DungeonAmbient1");
+        }
+
         EscapeToVillage escapeScript = FindFirstObjectByType<EscapeToVillage>();
         if (escapeScript != null) escapeScript.enabled = true;
 
-        // 2. Zbourat zdi (grafiku)
         if (wallsTilemap != null)
         {
-            foreach (Vector3Int pos in addedWalls)
-            {
-                wallsTilemap.SetTile(pos, null);
-            }
+            foreach (Vector3Int pos in addedWalls) wallsTilemap.SetTile(pos, null);
         }
 
-        // 3. Odstranit bariÈry (aby monstra mohla zase chodit)
-        foreach (GameObject barrier in activeBarriers)
-        {
-            Destroy(barrier);
-        }
+        foreach (GameObject barrier in activeBarriers) Destroy(barrier);
         activeBarriers.Clear();
 
-        // 4. Spawn Port·l
         if (exitPortalPrefab != null && portalSpawnPoint != null)
         {
             Instantiate(exitPortalPrefab, portalSpawnPoint.position, Quaternion.identity);

@@ -1,16 +1,17 @@
 using System.Collections;
 using UnityEngine;
 using UnityEngine.InputSystem;
+using UnityEngine.EventSystems; // <--- 1. PØIDÁNO: Nutné pro detekci UI
 
 public class SwordAttack : MonoBehaviour
 {
     [Header("Attack Settings")]
-    public float attackRange = 1.5f;  // Dosah útoku
-    public float attackAngle = 100f;  // Úhel výseèe
+    public float attackRange = 1.5f;
+    public float attackAngle = 100f;
 
     [Header("Timing")]
-    public float baseAttackDuration = 0.3f; // Základní délka animace
-    public float attackCooldown = 0.5f;     // Základní èas mezi útoky
+    public float baseAttackDuration = 0.3f;
+    public float attackCooldown = 0.5f;
 
     [Header("Weapon Stats")]
     public int weaponDamage = 20;
@@ -32,6 +33,14 @@ public class SwordAttack : MonoBehaviour
     // Voláno z WeaponManageru
     public void OnAttack(InputAction.CallbackContext context)
     {
+        // --- 2. PØIDÁNO: OCHRANA PROTI KLIKNUTÍ DO UI ---
+        // Pokud myš stojí na tlaèítku nebo inventáøi, okamžitì skonèíme.
+        if (EventSystem.current != null && EventSystem.current.IsPointerOverGameObject())
+        {
+            return;
+        }
+        // -----------------------------------------------
+
         if (context.performed && !isAttacking && Time.time >= nextAttackTime)
         {
             StartCoroutine(PerformAttack());
@@ -54,16 +63,20 @@ public class SwordAttack : MonoBehaviour
         Animator playerAnim = GetComponentInParent<Animator>();
         if (playerAnim != null)
         {
-            // Mùžeme poslat rychlost do animátoru (pokud máš parametr AttackSpeed)
             playerAnim.SetFloat("AttackSpeed", currentAttackSpeed);
             playerAnim.SetTrigger("Attack");
-            AudioManager.instance.PlaySFX("SwordSwing");
+
+            // Pojistka: Pøehrát zvuk jen pokud existuje AudioManager
+            if (AudioManager.instance != null)
+            {
+                AudioManager.instance.PlaySFX("SwordSwing");
+            }
         }
 
-        // 3. Aktualizace pozice hitboxu (podle toho kam koukáme)
+        // 3. Aktualizace pozice hitboxu
         UpdateAttackPointPosition(playerAnim);
 
-        // Výpoèet trvání (rychlejší útok = kratší èas)
+        // Výpoèet trvání
         float duration = baseAttackDuration / currentAttackSpeed;
 
         // Nastavení cooldownu
@@ -92,11 +105,10 @@ public class SwordAttack : MonoBehaviour
 
         if (stats != null)
         {
-            // Tady získáme i boolean isCrit
             finalDamage = stats.GetCalculatedDamage(weaponDamage, out isCrit);
         }
 
-        // B) Zjištìní smìru (z Animátoru, protože transform se netoèí)
+        // B) Zjištìní smìru
         Vector2 facingDir = Vector2.down;
 
         Animator anim = GetComponentInParent<Animator>();
@@ -128,7 +140,6 @@ public class SwordAttack : MonoBehaviour
                     EnemyStats eStats = hit.GetComponent<EnemyStats>();
                     if (eStats != null)
                     {
-                        // Pøedáme finalDamage I isCrit
                         eStats.TakeDamage(finalDamage, isCrit);
                     }
                 }
@@ -142,7 +153,6 @@ public class SwordAttack : MonoBehaviour
         {
             float x = anim.GetFloat("LastHorizontal");
             float y = anim.GetFloat("LastVertical");
-            // Posuneme tento objekt (SwordHolder) trochu ve smìru pohledu pro lepší debug
             transform.localPosition = new Vector3(x, y, 0).normalized * 0.5f;
         }
     }

@@ -199,6 +199,8 @@ public class SkeletonWarriorAI : MonoBehaviour
     IEnumerator PerformBlock()
     {
         isActionInProgress = true; agent.isStopped = true; anim.SetFloat("Speed", 0);
+        EnemyAudio audio = GetComponent<EnemyAudio>();
+        if (audio != null) audio.PlayDodge();
         anim.SetBool("IsBlocking", true); yield return new WaitForSeconds(1.5f); anim.SetBool("IsBlocking", false);
         isActionInProgress = false; currentState = State.Chase;
     }

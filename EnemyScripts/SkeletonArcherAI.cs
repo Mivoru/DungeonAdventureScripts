@@ -381,7 +381,8 @@ public class SkeletonArcherAI : MonoBehaviour
 
         // 2. Animace
         anim.SetTrigger("Evade");
-
+        EnemyAudio audio = GetComponent<EnemyAudio>();
+        if (audio != null) audio.PlayDodge();
         // 3. Výpočet směru (Od hráče)
         Vector3 dirFromPlayer = (transform.position - player.position).normalized;
         float dashDistance = 5f; // Prodloužíme úskok

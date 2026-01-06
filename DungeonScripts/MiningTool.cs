@@ -1,12 +1,13 @@
 using System.Collections;
 using UnityEngine;
 using UnityEngine.InputSystem;
+using UnityEngine.EventSystems; // <--- 1. PØIDÁNO
 
 public class MiningTool : MonoBehaviour
 {
     [Header("Mining Settings")]
-    public float range = 1.5f;      // Dosah (jako u meèe)
-    public float miningAngle = 100f; // Šíøka zábìru (výseè)
+    public float range = 1.5f;      // Dosah
+    public float miningAngle = 100f; // Šíøka zábìru
     public LayerMask resourceLayer;  // Vrstva "Resources"
     public int miningPower = 1;      // Síla kopnutí
     public float swingDuration = 0.3f;
@@ -21,6 +22,14 @@ public class MiningTool : MonoBehaviour
 
     public void OnAttack(InputAction.CallbackContext context)
     {
+        // --- 2. PØIDÁNO: OCHRANA PROTI KLIKNUTÍ DO UI ---
+        // Pokud myš stojí na UI (tlaèítko, inventáø), tìžbu ignorujeme
+        if (EventSystem.current != null && EventSystem.current.IsPointerOverGameObject())
+        {
+            return;
+        }
+        // -----------------------------------------------
+
         if (context.performed && !isSwinging)
         {
             StartCoroutine(Swing());
@@ -33,7 +42,13 @@ public class MiningTool : MonoBehaviour
 
         // 1. Logika Tìžby (Výseè)
         MineCone();
-        AudioManager.instance.PlaySFX("Mine");
+
+        // Pøehrát zvuk tìžby (pokud existuje AudioManager)
+        if (AudioManager.instance != null)
+        {
+            AudioManager.instance.PlaySFX("Mine");
+        }
+
         // 2. Animace nástroje (vizuální otoèení)
         float timer = 0f;
         Quaternion targetRot = Quaternion.Euler(0, 0, -50f);
@@ -80,7 +95,7 @@ public class MiningTool : MonoBehaviour
                 if (node != null)
                 {
                     node.TakeHit(miningPower);
-                    return; // Vytìžíme jen jednu rudu na jeden švih (nebo to smaž, pokud chceš plošnou tìžbu)
+                    return; // Vytìžíme jen jednu rudu na jeden švih
                 }
             }
         }

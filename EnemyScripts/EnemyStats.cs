@@ -137,12 +137,22 @@ public class EnemyStats : CharacterStats
             Debug.Log(" GIANT JE NEZRANITELNÝ!");
             return;
         }
+
         SkeletonArcherAI archerAI = GetComponent<SkeletonArcherAI>();
         if (archerAI != null && archerAI.IsEvading()) return;
 
         Animator anim = GetComponent<Animator>();
         SkeletonWarriorAI warriorAI = GetComponent<SkeletonWarriorAI>();
-        if (warriorAI != null && anim != null && anim.GetBool("IsBlocking")) return;
+
+        // --- VYLEPŠENÍ: ZVUK BLOKOVÁNÍ ---
+        if (warriorAI != null && anim != null && anim.GetBool("IsBlocking"))
+        {
+            // Pokud blokuje, pøehrajeme zvuk cinknutí do štítu
+            if (enemyAudio != null) enemyAudio.PlayBlock();
+            return; // A nedáváme žádný damage
+        }
+        // ---------------------------------
+
         // ZAVOLÁME FLOATING TEXT
         if (FloatingTextManager.instance != null)
         {
@@ -150,6 +160,9 @@ public class EnemyStats : CharacterStats
         }
 
         base.TakeDamage(damage, isCrit); // Zavolá CharacterStats (ubere HP)
+
+        // ZVUK ZRANÌNÍ (Hurt)
+        // Tady voláme bezpeènou metodu PlayHurt(), to je správnì
         if (enemyAudio != null && currentHealth > 0)
         {
             enemyAudio.PlayHurt();
@@ -167,6 +180,34 @@ public class EnemyStats : CharacterStats
         if (slime != null) slime.TriggerHurtAnim();
 
         StartCoroutine(StunRoutine());
+    }
+
+    public override void Die()
+    {
+        // --- OPRAVA CRASHU ---
+        if (enemyAudio != null)
+        {
+            // STARÝ KÓD (NEBEZPEÈNÝ):
+            // AudioSource.PlayClipAtPoint(enemyAudio.deathSound, transform.position);
+
+            // NOVÝ KÓD (BEZPEÈNÝ):
+            // Voláme metodu uvnitø EnemyAudio, která má v sobì "if (deathSound == null) return;"
+            enemyAudio.PlayDeath();
+        }
+        // ---------------------
+
+        base.Die();
+
+        if (PlayerStats.instance != null)
+        {
+            int xpAmount = CalculateXP();
+            int finalXP = ApplyLevelGapPenalty(xpAmount);
+            Debug.Log($"Enemy {rank} (Lvl {level}) killed. Base: {xpAmount}, Final: {finalXP}");
+            PlayerStats.instance.AddXP(finalXP);
+        }
+
+        DropLoot();
+        Destroy(gameObject);
     }
 
     System.Collections.IEnumerator StunRoutine()
@@ -189,34 +230,7 @@ public class EnemyStats : CharacterStats
         if (slimeAI != null) slimeAI.enabled = true;
     }
 
-    public override void Die()
-    {
-        if (enemyAudio != null)
-        {
-            // Trik: Vytvoøíme doèasný objekt jen pro zvuk smrti, pokud se tento znièí
-            AudioSource.PlayClipAtPoint(enemyAudio.deathSound, transform.position);
-
-            // Nebo pokud používáš animaci smrti a Destroy je zpoždìné, staèí:
-            // enemyAudio.PlayDeath(); 
-        }
-        base.Die();
-
-        if (PlayerStats.instance != null)
-        {
-            // 1. Vypoèítáme XP podle Ranku a Levelu nepøítele
-            int xpAmount = CalculateXP();
-
-            // 2. Aplikujeme penalizaci, pokud je hráè moc silný
-            int finalXP = ApplyLevelGapPenalty(xpAmount);
-
-            Debug.Log($"Enemy {rank} (Lvl {level}) killed. Base: {xpAmount}, Final: {finalXP}");
-
-            PlayerStats.instance.AddXP(finalXP);
-        }
-
-        DropLoot();
-        Destroy(gameObject);
-    }
+    
     int CalculateXP()
     {
         int baseVal = 0;
