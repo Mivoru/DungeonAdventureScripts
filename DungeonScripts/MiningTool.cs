@@ -1,34 +1,29 @@
 using System.Collections;
 using UnityEngine;
 using UnityEngine.InputSystem;
-using UnityEngine.EventSystems; // <--- 1. PØIDÁNO
+using UnityEngine.EventSystems;
 
 public class MiningTool : MonoBehaviour
 {
     [Header("Mining Settings")]
-    public float range = 1.5f;      // Dosah
-    public float miningAngle = 100f; // Šíøka zábìru
-    public LayerMask resourceLayer;  // Vrstva "Resources"
-    public int miningPower = 1;      // Síla kopnutí
-    public float swingDuration = 0.3f;
+    public float range = 1.5f;
+    public float miningAngle = 100f;
+    public LayerMask resourceLayer;
+    public int miningPower = 1;
+    public float swingDuration = 0.3f; // Délka animace (doba, kdy nemùžeš znovu kliknout)
 
     private bool isSwinging = false;
-    private Quaternion defaultRot;
+    // private Quaternion defaultRot; // UŽ NEPOTØEBUJEME (viz níže)
 
     void Start()
     {
-        defaultRot = transform.localRotation;
+        // defaultRot = transform.localRotation;
     }
 
     public void OnAttack(InputAction.CallbackContext context)
     {
-        // --- 2. PØIDÁNO: OCHRANA PROTI KLIKNUTÍ DO UI ---
-        // Pokud myš stojí na UI (tlaèítko, inventáø), tìžbu ignorujeme
-        if (EventSystem.current != null && EventSystem.current.IsPointerOverGameObject())
-        {
-            return;
-        }
-        // -----------------------------------------------
+        // Ochrana proti UI
+        if (EventSystem.current != null && EventSystem.current.IsPointerOverGameObject()) return;
 
         if (context.performed && !isSwinging)
         {
@@ -40,35 +35,33 @@ public class MiningTool : MonoBehaviour
     {
         isSwinging = true;
 
-        // 1. Logika Tìžby (Výseè)
-        MineCone();
+        Animator anim = GetComponentInParent<Animator>();
+        if (anim != null)
+        {
+            // 1. DÙLEŽITÉ: Nastavíme rychlost na 1.
+            // Pokud je toto na 0 (což na startu hry je), animace zamrzne na 1. snímku.
+            // Skript meèe to dìlá taky, proto to po meèi fungovalo.
+            anim.SetFloat("AttackSpeed", 1.0f);
 
-        // Pøehrát zvuk tìžby (pokud existuje AudioManager)
+            // 2. Použijeme Trigger (jako døív)
+            anim.SetTrigger("Attack");
+        }
+
         if (AudioManager.instance != null)
         {
             AudioManager.instance.PlaySFX("Mine");
         }
 
-        // 2. Animace nástroje (vizuální otoèení)
-        float timer = 0f;
-        Quaternion targetRot = Quaternion.Euler(0, 0, -50f);
+        MineCone();
 
-        while (timer < swingDuration)
-        {
-            transform.localRotation = Quaternion.Lerp(defaultRot, targetRot, timer / swingDuration);
-            timer += Time.deltaTime;
-            yield return null;
-        }
+        yield return new WaitForSeconds(swingDuration);
 
-        // Návrat zpìt
-        transform.localRotation = defaultRot;
         isSwinging = false;
     }
 
     void MineCone()
     {
-        // A) Zjištìní smìru (Podle Animátoru hráèe)
-        Vector2 facingDir = Vector2.down; // Default
+        Vector2 facingDir = Vector2.down;
         Animator anim = GetComponentInParent<Animator>();
 
         if (anim != null)
@@ -78,24 +71,27 @@ public class MiningTool : MonoBehaviour
             else facingDir = Vector2.down;
         }
 
-        // B) Støed tìžby (Od støedu hráèe)
         Vector3 origin = transform.parent.position;
-
-        // C) Hledáme rudy v kruhu
         Collider2D[] hits = Physics2D.OverlapCircleAll(origin, range, resourceLayer);
 
         foreach (var hit in hits)
         {
             Vector2 dirToTarget = (hit.transform.position - origin).normalized;
 
-            // D) Kontrola Úhlu (Je ruda pøed námi?)
             if (Vector2.Angle(facingDir, dirToTarget) < miningAngle / 2f)
             {
                 ResourceNode node = hit.GetComponent<ResourceNode>();
                 if (node != null)
                 {
                     node.TakeHit(miningPower);
-                    return; // Vytìžíme jen jednu rudu na jeden švih
+
+                    // --- ZAKOMENTOVÁNO (OPRAVA CHYBY) ---
+                    // Zatím nemáme EffectManager, takže tohle schováme, aby hra fungovala.
+                    // if (EffectManager.instance != null) 
+                    //     EffectManager.instance.PlayMiningEffect(hit.transform.position);
+                    // ------------------------------------
+
+                    return;
                 }
             }
         }
@@ -103,7 +99,6 @@ public class MiningTool : MonoBehaviour
 
     void OnDrawGizmosSelected()
     {
-        // Vizualizace dosahu (pokud je skript pøipojen)
         if (transform.parent != null)
         {
             Gizmos.color = Color.gray;
