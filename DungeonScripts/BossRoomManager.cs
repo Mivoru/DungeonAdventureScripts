@@ -15,8 +15,6 @@ public class BossRoomManager : MonoBehaviour
     public GameObject bossPrefab;
     private GameObject activeBoss;
 
-    // ZMÃNA: Tady uû nenÌ û·dn· hudba, vöe ¯eöÌ AudioManager centr·lnÏ.
-
     [Header("Room Locking (Gen)")]
     public TileBase wallTile;
     public int roomSize = 25;
@@ -24,7 +22,7 @@ public class BossRoomManager : MonoBehaviour
     [Header("Navigation")]
     public GameObject navMeshBarrierPrefab;
 
-    private bool isLocked = false;
+    private bool isLocked = false; // SlouûÌ z·roveÚ jako pojistka proti dvojitÈmu spuötÏnÌ
     private Tilemap wallsTilemap;
     private List<Vector3Int> addedWalls = new List<Vector3Int>();
     private List<GameObject> activeBarriers = new List<GameObject>();
@@ -38,25 +36,28 @@ public class BossRoomManager : MonoBehaviour
 
     void OnTriggerEnter2D(Collider2D other)
     {
+        // Pokud uû je zamËeno, nic nedÏlej.
         if (!isLocked && other.CompareTag("Player"))
         {
+            // 1. DŸLEéIT…: Zamkneme to HNED TEœ, ne aû v Coroutine.
+            // TÌm zabr·nÌme tomu, aby se Boss spawnul 2x, kdyû hr·Ë rychle projde triggerem.
+            isLocked = true;
             StartCoroutine(LockRoomSequence());
         }
     }
 
     IEnumerator LockRoomSequence()
     {
-        isLocked = true;
+        // (isLocked = true uû jsme nastavili naho¯e)
+
         yield return new WaitForSeconds(1.0f);
 
         Debug.Log("ZAMYK¡M MÕSTNOST!");
 
-        // --- ZMÃNA: ÿekneme AudioManageru, aù nÏco vybere ---
         if (AudioManager.instance != null)
         {
             AudioManager.instance.PlayRandomBossTheme();
         }
-        // ----------------------------------------------------
 
         EscapeToVillage escapeScript = FindFirstObjectByType<EscapeToVillage>();
         if (escapeScript != null) escapeScript.enabled = false;
@@ -89,10 +90,35 @@ public class BossRoomManager : MonoBehaviour
             }
         }
 
-        // SPAWN BOSSE
+        // SPAWN BOSSE A NASTAVENÕ LEVELU
         if (activeBoss == null && bossPrefab != null)
         {
             activeBoss = Instantiate(bossPrefab, bossSpawnPoint.position, Quaternion.identity);
+
+            // --- TADY JE TA OPRAVA LEVELU ---
+            // 1. ZjistÌme, jak˝ level m· Boss mÌt (z GameManageru -> Floor Data)
+            int targetLevel = 10; // DefaultnÌ hodnota pro jistotu
+
+            if (GameManager.instance != null && GameManager.instance.currentLevelData != null)
+            {
+                targetLevel = GameManager.instance.currentLevelData.bossLevel;
+            }
+            // Pokud nem·me GameManager (testov·nÌ), zkusÌme to vyt·hnout z Gener·toru
+            else
+            {
+                var gen = FindFirstObjectByType<DungeonGenerator>();
+                if (gen != null) targetLevel = gen.bossLevel;
+            }
+
+            // 2. Aplikujeme level na Bosse
+            EnemyStats stats = activeBoss.GetComponent<EnemyStats>();
+            if (stats != null)
+            {
+                stats.SetLevel(targetLevel); // Tohle p¯epoËÌt· ûivoty a damage
+                Debug.Log($"Boss spawnut! Level nastaven na: {targetLevel}");
+            }
+            // --------------------------------
+
             bossSpawned = true;
         }
     }
@@ -107,10 +133,10 @@ public class BossRoomManager : MonoBehaviour
 
     void UnlockRoom()
     {
-        isLocked = false;
+        // isLocked = false nastavÌme aû ˙plnÏ na konci, nebo nech·me true, 
+        // protoûe tato instance Manageru se stejnÏ zniËÌ.
         Debug.Log("MÕSTNOST ODEM»ENA!");
 
-        // N¡VRAT K AMBIENTU
         if (AudioManager.instance != null)
         {
             AudioManager.instance.PlayMusic("DungeonAmbient1");

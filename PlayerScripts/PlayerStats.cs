@@ -40,6 +40,12 @@ public class PlayerStats : CharacterStats
     public Vector3 damageOffset = new Vector3(0, 1.0f, 0); // Pozice pro èervená èísla
     public Vector3 healOffset = new Vector3(0, 1.5f, 0);   // Pozice pro zelená èísla
 
+    [Header("Status Effects")]
+    private bool isPoisoned = false;
+    private Coroutine poisonCoroutine;
+    private SpriteRenderer sr;
+    private Color originalColor = Color.white;
+
 
     // --- SNAPSHOT DATA (Pro návrat po smrti) ---
     private int savedLevel;
@@ -70,7 +76,8 @@ public class PlayerStats : CharacterStats
             Destroy(gameObject); // Znièit duplikát
             return;
         }
-
+        sr = GetComponentInChildren<SpriteRenderer>();
+        if (sr != null) originalColor = sr.color;
         instance = this;
         DontDestroyOnLoad(gameObject); // Pøežít naèítání scén
 
@@ -107,7 +114,35 @@ public class PlayerStats : CharacterStats
         // Spustit regeneraci
         StartCoroutine(RegenerationRoutine());
     }
+    public void ApplyPoison(float duration, int damagePerTick)
+    {
+        if (isPoisoned) StopCoroutine(poisonCoroutine);
+        poisonCoroutine = StartCoroutine(PoisonRoutine(duration, damagePerTick));
+    }
 
+    IEnumerator PoisonRoutine(float duration, int damage)
+    {
+        isPoisoned = true;
+        // Zmìna barvy na zelenou
+        if (sr != null) sr.color = Color.green;
+        Debug.Log("Jsem otráven!");
+
+        float timer = 0;
+        while (timer < duration)
+        {
+            yield return new WaitForSeconds(1f);
+
+            // Voláme tvoji existující metodu pro poškození
+            TakeDamage(damage);
+            Debug.Log($"Jed ubral {damage} HP.");
+
+            timer++;
+        }
+
+        // Návrat barvy
+        if (sr != null) sr.color = originalColor;
+        isPoisoned = false;
+    }
     // --- SNAPSHOT SYSTÉM ---
     // Zavolá GameManager pøed vstupem do Dungeonu
     public void SaveSnapshot()
