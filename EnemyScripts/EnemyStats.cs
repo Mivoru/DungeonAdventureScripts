@@ -18,7 +18,7 @@ public class EnemyStats : CharacterStats
 
     [Header("Enemy Info")]
     public string enemyName = "Enemy";
-    public EnemyRank rank = EnemyRank.Weak; // Tady v Inspectoru vybereö, co to je
+    public EnemyRank rank = EnemyRank.Weak;
 
     [Header("Enemy Level")]
     public int level = 1;
@@ -26,7 +26,10 @@ public class EnemyStats : CharacterStats
     [Header("Scaling Settings")]
     public int healthPerLevel = 10;
     public int damagePerLevel = 2;
-    // xpRewardPerLevel uû nepot¯ebujeme tolik ¯eöit, vypoËÌt·me to dynamicky podle Ranku
+
+    // --- NOVINKA: Univerz·lnÌ nesmrtelnost (pro Bosse p¯i Burrow, Gianta atd.) ---
+    [Header("Status Effects")]
+    public bool isInvincible = false;
 
     [System.Serializable]
     public class LootEntry
@@ -48,25 +51,25 @@ public class EnemyStats : CharacterStats
     private int _startBaseDamage;
     private bool _initialized = false;
     private EnemyAudio enemyAudio;
+
     void Awake()
     {
-        // 1. Pokud m·me Data (Scriptable Object), naËteme je a PÿEPÕäEME Inspector
+        // 1. Pokud m·me Data, naËteme je
         if (data != null)
         {
             enemyName = data.enemyName;
             maxHealth = data.maxHealth;
             baseDamage = data.baseDamage;
 
-            // Loot naËteme jen pokud v Inspectoru nic nenÌ (aby öel p¯epsat manu·lnÏ)
             if (lootTable == null || lootTable.Count == 0) lootTable = data.lootTable;
             if (lootPrefab == null) lootPrefab = data.lootPrefab;
         }
 
-        // 2. UloûÌme si startovnÌ hodnoty (aù uû jsou z Dat nebo z Inspectoru)
+        // 2. UloûÌme startovnÌ hodnoty
         _startMaxHealth = maxHealth;
         _startBaseDamage = baseDamage;
 
-        // 3. Z·chrann· brzda: Pokud je i teÔ 0, d·me tam aspoÚ nÏco, aby neum¯el hned
+        // 3. Z·chrann· brzda
         if (_startMaxHealth <= 0) _startMaxHealth = 50;
         if (_startBaseDamage <= 0) _startBaseDamage = 5;
     }
@@ -80,6 +83,7 @@ public class EnemyStats : CharacterStats
 
         if (healthBar == null) healthBar = GetComponentInChildren<HealthBar>();
 
+        // AutomatickÈ hled·nÌ UI text˘, pokud nejsou p¯i¯azeny
         if (levelText == null)
         {
             Transform lvlObj = transform.Find("HealthCanvas/LevelText");
@@ -105,7 +109,6 @@ public class EnemyStats : CharacterStats
 
     void ApplyLevelStats()
     {
-        // Vûdy poËÌt·me od _startMaxHealth, coû je teÔ bezpeËnÏ nastavenÈ v Awake
         if (level > 1)
         {
             maxHealth = _startMaxHealth + ((level - 1) * healthPerLevel);
@@ -131,70 +134,72 @@ public class EnemyStats : CharacterStats
 
     public override void TakeDamage(int damage, bool isCrit = false)
     {
+        // 1. KONTROLA NESMRTELNOSTI
+        // (Tohle teÔ funguje pro Gianta i pro Arachne, kdyû je pod zemÌ)
         GiantAI giant = GetComponent<GiantAI>();
-        if (giant != null && giant.IsInvulnerable())
+        if (isInvincible || (giant != null && giant.IsInvulnerable()))
         {
-            Debug.Log(" GIANT JE NEZRANITELN›!");
+            // Debug.Log($"{enemyName} je moment·lnÏ nesmrteln˝!");
             return;
         }
 
+        // 2. KONTROLA ⁄HYBU (Archer)
         SkeletonArcherAI archerAI = GetComponent<SkeletonArcherAI>();
         if (archerAI != null && archerAI.IsEvading()) return;
 
+        // 3. KONTROLA BLOKOV¡NÕ (Warrior)
         Animator anim = GetComponent<Animator>();
         SkeletonWarriorAI warriorAI = GetComponent<SkeletonWarriorAI>();
 
-        // --- VYLEPäENÕ: ZVUK BLOKOV¡NÕ ---
         if (warriorAI != null && anim != null && anim.GetBool("IsBlocking"))
         {
-            // Pokud blokuje, p¯ehrajeme zvuk cinknutÌ do ötÌtu
             if (enemyAudio != null) enemyAudio.PlayBlock();
-            return; // A ned·v·me û·dn˝ damage
+            return;
         }
-        // ---------------------------------
 
-        // ZAVOL¡ME FLOATING TEXT
+        // --- APLIKACE POäKOZENÕ ---
+
+        // Floating Text
         if (FloatingTextManager.instance != null)
         {
             FloatingTextManager.instance.ShowDamage(damage, transform.position, isCrit);
         }
 
-        base.TakeDamage(damage, isCrit); // Zavol· CharacterStats (ubere HP)
+        base.TakeDamage(damage, isCrit); // Ubere HP
 
-        // ZVUK ZRANÃNÕ (Hurt)
-        // Tady vol·me bezpeËnou metodu PlayHurt(), to je spr·vnÏ
+        // Zvuk
         if (enemyAudio != null && currentHealth > 0)
         {
             enemyAudio.PlayHurt();
         }
 
+        // Animace z·sahu
         if (anim != null) anim.SetTrigger("Hit");
 
+        // --- AGGRO TRIGGER (Reakce AI) ---
         EnemyAI ai = GetComponent<EnemyAI>();
         if (ai != null) ai.TriggerAggro();
 
         if (warriorAI != null) warriorAI.TriggerAggro();
         if (archerAI != null) archerAI.TriggerAggro();
 
+        // P¯id·no pro Bosse (i kdyû ten m· aggro asi po¯·d)
+        /* ArachneBossAI bossAI = GetComponent<ArachneBossAI>(); 
+           if (bossAI != null) ... */
+
         SlimeAI slime = GetComponent<SlimeAI>();
         if (slime != null) slime.TriggerHurtAnim();
 
-        StartCoroutine(StunRoutine());
+        // Stun (zastavenÌ na chvÌli)
+        if (currentHealth > 0) StartCoroutine(StunRoutine());
     }
 
     public override void Die()
     {
-        // --- OPRAVA CRASHU ---
         if (enemyAudio != null)
         {
-            // STAR› K”D (NEBEZPE»N›):
-            // AudioSource.PlayClipAtPoint(enemyAudio.deathSound, transform.position);
-
-            // NOV› K”D (BEZPE»N›):
-            // Vol·me metodu uvnit¯ EnemyAudio, kter· m· v sobÏ "if (deathSound == null) return;"
             enemyAudio.PlayDeath();
         }
-        // ---------------------
 
         base.Die();
 
@@ -202,7 +207,7 @@ public class EnemyStats : CharacterStats
         {
             int xpAmount = CalculateXP();
             int finalXP = ApplyLevelGapPenalty(xpAmount);
-            Debug.Log($"Enemy {rank} (Lvl {level}) killed. Base: {xpAmount}, Final: {finalXP}");
+            Debug.Log($"Enemy {rank} (Lvl {level}) killed. XP: {finalXP}");
             PlayerStats.instance.AddXP(finalXP);
         }
 
@@ -212,95 +217,88 @@ public class EnemyStats : CharacterStats
 
     System.Collections.IEnumerator StunRoutine()
     {
+        // ZÌsk·me reference na r˘znÈ AI scripty
         EnemyAI ai = GetComponent<EnemyAI>();
         SkeletonWarriorAI warriorAI = GetComponent<SkeletonWarriorAI>();
         SkeletonArcherAI archerAI = GetComponent<SkeletonArcherAI>();
         SlimeAI slimeAI = GetComponent<SlimeAI>();
+        ArachneBossAI bossAI = GetComponent<ArachneBossAI>(); // PÿID¡NO
 
+        // Vypneme
         if (ai != null) ai.enabled = false;
         if (warriorAI != null) warriorAI.enabled = false;
         if (archerAI != null) archerAI.enabled = false;
         if (slimeAI != null) slimeAI.enabled = false;
 
+        // Bosse vÏtöinou nechceme stunovat p¯i kaûdÈm z·sahu, 
+        // ale pokud ano, odkomentuj toto:
+        // if (bossAI != null) bossAI.enabled = false; 
+
         yield return new WaitForSeconds(0.4f);
 
+        // Zapneme
         if (ai != null) ai.enabled = true;
         if (warriorAI != null) warriorAI.enabled = true;
         if (archerAI != null) archerAI.enabled = true;
         if (slimeAI != null) slimeAI.enabled = true;
+        // if (bossAI != null) bossAI.enabled = true;
     }
 
-    
     int CalculateXP()
     {
         int baseVal = 0;
         int scaleVal = 0;
 
-        // NastavenÌ hodnot podle toho, jak˝ je to typ nep¯Ìtele
         switch (rank)
         {
             case EnemyRank.Weak:    // Slime
-                baseVal = 10;
-                scaleVal = 2;       // +2 XP za kaûd˝ level navÌc
-                break;
+                baseVal = 10; scaleVal = 2; break;
             case EnemyRank.Normal:  // Skeleton
-                baseVal = 30;
-                scaleVal = 5;       // +5 XP za level
-                break;
+                baseVal = 30; scaleVal = 5; break;
             case EnemyRank.Elite:   // Ent
-                baseVal = 80;
-                scaleVal = 10;
-                break;
+                baseVal = 80; scaleVal = 10; break;
             case EnemyRank.Boss:    // Boss
-                baseVal = 500;
-                scaleVal = 50;
-                break;
+                baseVal = 500; scaleVal = 50; break;
         }
 
-        // Vzorec: Z·klad + (Level nep¯Ìtele * ök·lov·nÌ)
         return baseVal + ((level - 1) * scaleVal);
     }
 
     int ApplyLevelGapPenalty(int xpAmount)
     {
-        int playerLvl = PlayerStats.instance.currentLevel;
-        int enemyLvl = level; // Tady se bere TENHLE level tohoto nep¯Ìtele
+        if (PlayerStats.instance == null) return xpAmount;
 
-        // Pokud je nep¯Ìtel silnÏjöÌ nebo stejn˝, dostaneö 100% XP
+        int playerLvl = PlayerStats.instance.currentLevel;
+        int enemyLvl = level;
+
         if (enemyLvl >= playerLvl) return xpAmount;
 
-        // Pokud je hr·Ë silnÏjöÌ, poËÌt·me rozdÌl
         int diff = playerLvl - enemyLvl;
-
-        // Tolerance: Pokud jsi o 1-3 levely v˝ö, jeötÏ ti XP nesebere
         if (diff <= 3) return xpAmount;
-
-        // Pokud je rozdÌl vÏtöÌ neû 3 levely:
-        // Za kaûd˝ dalöÌ level dol˘ -20% XP
-        // P¯Ìklad: Hr·Ë 15, Enemy 5 -> RozdÌl 10. (10 - 3 tolerance) = 7.
-        // 7 * 0.2 = 1.4 (140% penalizace) -> 0 XP.
 
         float penalty = (diff - 3) * 0.2f;
         float multiplier = 1.0f - penalty;
 
-        if (multiplier <= 0) return 1; // Vûdy dostaneö aspoÚ 1 XP (symbolicky)
+        if (multiplier <= 0) return 1;
 
         return Mathf.RoundToInt(xpAmount * multiplier);
     }
+
     void DropLoot()
     {
         if (lootPrefab == null || lootTable == null) return;
 
-        // ZÌsk·me hr·Ëovo ötÏstÌ
         float playerLuck = 1.0f;
         if (PlayerStats.instance != null) playerLuck = PlayerStats.instance.luck;
 
         foreach (LootEntry entry in lootTable)
         {
-            // ZMÃNA: N·sobÌme öanci ötÏstÌm
-            // (Nap¯. 10% öance * 1.5 Luck = 15% öance)
+            // V˝poËet öance se ötÏstÌm
             float chance = entry.dropChance * playerLuck;
-            if (UnityEngine.Random.Range(0f, 100f) <= entry.dropChance)
+
+            // --- OPRAVA ZDE ---
+            // P˘vodnÏ jsi porovn·val s 'entry.dropChance' mÌsto s vypoËÌtanou 'chance'
+            if (UnityEngine.Random.Range(0f, 100f) <= chance)
             {
                 Vector3 spawnPos = transform.position + (Vector3)UnityEngine.Random.insideUnitCircle * scatterRadius;
                 GameObject loot = Instantiate(lootPrefab, spawnPos, Quaternion.identity);

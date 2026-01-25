@@ -11,7 +11,11 @@ public class DungeonLevelData : ScriptableObject
     [Header("Generator Settings")]
     public int numberOfRooms = 20;
     public Vector2Int minMaxRoomSize = new Vector2Int(10, 25);
-    public int bossLevel = 10;
+
+    // --- VRÁCENO A UPRAVENO ---
+    [Header("Boss Settings")]
+    public int bossLevel = 10;           // Síla bosse (nebo každé kolikáté patro)
+    public GameObject bossPrefab;        // Jaký boss to bude (Arachne, SlimeKing...)
 
     [Header("Enemies")]
     public List<DungeonGenerator.EnemyGroup> enemyGroups;
@@ -20,5 +24,4 @@ public class DungeonLevelData : ScriptableObject
 
     [Header("Resources")]
     public List<DungeonGenerator.ResourceConfig> resources;
-
 }

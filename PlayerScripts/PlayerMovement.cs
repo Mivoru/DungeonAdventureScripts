@@ -5,6 +5,9 @@ using UnityEngine.InputSystem;
 [RequireComponent(typeof(Rigidbody2D))]
 public class PlayerMovement : MonoBehaviour
 {
+    [HideInInspector]
+    public float slowMultiplier = 1f;
+
     public float sprintSpeedMultiplier = 1.8f;
 
     [Header("Dash Settings")]
@@ -21,7 +24,8 @@ public class PlayerMovement : MonoBehaviour
     private Vector2 movementInput;
     private Vector2 mousePosition;
     private float currentSpeed;
-    private float slowMultiplier = 1f;
+
+    
 
     private bool isDashing = false;
     private bool canDash = true;
@@ -97,16 +101,6 @@ public class PlayerMovement : MonoBehaviour
 
         Vector2 lookDir = (mouseWorldPos - transform.position).normalized;
 
-        // ---------------------------------------------------------
-        // TOTO JE TA ČÁST, KTEROU JSME ZAKOMENTOVALI (FYZICKÁ ROTACE)
-        // Protože používáme 4-směrové animace, nesmíme točit objektem.
-        /*
-        Vector3 direction = mouseWorldPos - transform.position;
-        float angle = Mathf.Atan2(direction.y, direction.x) * Mathf.Rad2Deg - 90f;
-        transform.rotation = Quaternion.Euler(new Vector3(0, 0, angle));
-        */
-        // ---------------------------------------------------------
-
         // --- OVLÁDÁNÍ ANIMÁTORU ---
         if (anim != null)
         {
@@ -155,18 +149,6 @@ public class PlayerMovement : MonoBehaviour
 
         Vector2 targetVelocity = movementInput * currentSpeed * slowMultiplier;
         rb.linearVelocity = targetVelocity;
-    }
-
-    public void ApplySlow(float duration, float slowAmount)
-    {
-        StartCoroutine(SlowRoutine(duration, slowAmount));
-    }
-
-    IEnumerator SlowRoutine(float duration, float slowAmount)
-    {
-        slowMultiplier = slowAmount;
-        yield return new WaitForSeconds(duration);
-        slowMultiplier = 1f;
     }
 
     IEnumerator PerformDash()

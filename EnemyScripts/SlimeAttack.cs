@@ -23,10 +23,8 @@ public class SlimeAttack : MonoBehaviour
     // Slime útoèí, kdy do nìèeho narazí (po skoku)
     void OnCollisionEnter2D(Collision2D collision)
     {
-        // Zkontrolujeme, jestli jsme narazili dostateènou rychlostí (aby to nebyl jen uk)
-        // Nebo prostì pøi kadém dopadu na hráèe/zem
-
-        // Pokud narazíme pøímo do hráèe NEBO do zdi/zemì blízko hráèe
+        // Kontrola, aby útoèil jen pøi dopadu na zem nebo hráèe
+        // (Mùeš sem pøidat podmínku na rychlost, pokud chceš)
         PerformAreaAttack();
     }
 
@@ -40,18 +38,22 @@ public class SlimeAttack : MonoBehaviour
             // Zkontrolujeme, jestli je to hráè
             if (hit.CompareTag("Player"))
             {
-                // A. Zpùsobit poškození (bereme ze stats)
                 PlayerStats playerStats = hit.GetComponent<PlayerStats>();
-                if (playerStats != null && myStats != null)
-                {
-                    playerStats.TakeDamage(myStats.baseDamage);
-                }
 
-                // B. Zpùsobit zpomalení
-                PlayerMovement playerMove = hit.GetComponent<PlayerMovement>();
-                if (playerMove != null)
+                if (playerStats != null)
                 {
-                    playerMove.ApplySlow(slowDuration, slowPercentage);
+                    // A. Zpùsobit poškození (bereme ze stats)
+                    
+                    if (myStats != null)
+                    {
+                        playerStats.TakeDamage(myStats.baseDamage);
+                    }
+
+                    // B. Zpùsobit zpomalení (OPRAVENO)
+                    // Voláme to pøes PlayerStats, ne pøes PlayerMovement
+                    // Pozor na poøadí argumentù: (síla, èas)
+                    playerStats.ApplySlowness(slowPercentage, slowDuration);
+                    
                 }
             }
         }

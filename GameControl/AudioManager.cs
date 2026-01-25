@@ -1,7 +1,8 @@
 using UnityEngine;
 using System;
 using UnityEngine.SceneManagement;
-using System.Collections; // <--- TOTO TI CHYBÌLO PRO IEnumerator!
+using System.Collections;
+using System.Collections.Generic;
 
 public class AudioManager : MonoBehaviour
 {
@@ -12,12 +13,15 @@ public class AudioManager : MonoBehaviour
     [SerializeField] private AudioSource sfxSource;
 
     [Header("Lists")]
-    public Sound[] musicSounds;
-    public Sound[] sfxSounds;
+    public Sound[] musicSounds; // "VillageDay", "DungeonAmbient" atd.
+    public Sound[] sfxSounds;   // Globální SFX
 
-    [Header("Boss Music Playlist")]
-    // SEM v Inspectoru naházej své skladby (BossMusic1, BossMusic2...)
-    public AudioClip[] bossMusicList;
+    [Header("Global Boss Music Pool")]
+    public AudioClip[] bossMusicList; // Zásobník pro náhodné bosse
+
+    // Promìnné pro Playlist (Arachne)
+    private List<AudioClip> currentPlaylist;
+    private bool isPlayingPlaylist = false;
 
     [System.Serializable]
     public class Sound
@@ -63,6 +67,10 @@ public class AudioManager : MonoBehaviour
     {
         string sceneName = scene.name;
 
+        // Reset playlistu pøi naètení scény
+        isPlayingPlaylist = false;
+        StopAllCoroutines();
+
         if (sceneName == "MainMenu")
         {
             PlayMusic("MainMenu");
@@ -71,13 +79,14 @@ public class AudioManager : MonoBehaviour
         {
             PlayRandomMusic(new string[] { "VillageDayAmbient1", "VillageDayAmbient2" });
         }
-        else if (sceneName == "DungeonScene")
+        else if (sceneName.Contains("Dungeon") || sceneName == "DungeonScene")
         {
             PlayRandomMusic(new string[] { "DungeonAmbient1", "DungeonAmbient2" });
         }
     }
 
     // --- OVLÁDÁNÍ HLASITOSTI ---
+
     public void SetMusicVolume(float volume)
     {
         musicSource.volume = volume;
@@ -90,26 +99,35 @@ public class AudioManager : MonoBehaviour
         PlayerPrefs.SetFloat("SFXVolume", volume);
     }
 
+    // --- TYTO METODY CHYBÌLY PRO SettingsMenu ---
     public float GetMusicVolume() { return musicSource.volume; }
     public float GetSFXVolume() { return sfxSource.volume; }
 
 
-    // --- PØEHRÁVÁNÍ HUDBY ---
+    // --- PØEHRÁVÁNÍ KLASICKÉ HUDBY (Jeden track smyèka) ---
 
     public void PlayMusic(string name)
     {
+        if (isPlayingPlaylist)
+        {
+            isPlayingPlaylist = false;
+            StopAllCoroutines();
+        }
+
         Sound s = Array.Find(musicSounds, x => x.name == name);
         if (s == null)
         {
-            Debug.LogWarning("Hudba '" + name + "' nenalezena v poli Music Sounds!");
+            Debug.LogWarning("Hudba '" + name + "' nenalezena!");
             return;
         }
 
-        if (musicSource.clip == s.clip && musicSource.isPlaying) return;
+        if (musicSource.clip == s.clip && musicSource.isPlaying)
+        {
+            musicSource.loop = true;
+            return;
+        }
 
-        musicSource.clip = s.clip;
-        musicSource.loop = true;
-        musicSource.Play();
+        StartCoroutine(CrossFadeMusic(s.clip, true));
     }
 
     public void PlayRandomMusic(string[] names)
@@ -119,35 +137,68 @@ public class AudioManager : MonoBehaviour
         PlayMusic(names[randomIndex]);
     }
 
-    // --- BOSS MUSIC LOGIKA (NOVÉ) ---
+    // --- TATO METODA CHYBÌLA PRO BossMusicTrigger ---
+    public void PlayBossMusic(AudioClip bossClip)
+    {
+        // Vypneme playlist, pokud bìží
+        isPlayingPlaylist = false;
+        StopAllCoroutines();
 
-    // Tuto metodu zavolá BossRoomManager
+        if (musicSource.clip == bossClip && musicSource.isPlaying) return;
+
+        StartCoroutine(CrossFadeMusic(bossClip, true));
+    }
+
+
+    // --- PØEHRÁVÁNÍ PLAYLISTU (Arachne / Custom Boss) ---
+
+    public void PlayBossPlaylist(List<AudioClip> clips)
+    {
+        if (clips == null || clips.Count == 0) return;
+
+        currentPlaylist = new List<AudioClip>(clips);
+        isPlayingPlaylist = true;
+
+        StopAllCoroutines();
+        StartCoroutine(PlaylistRoutine());
+    }
+
+    IEnumerator PlaylistRoutine()
+    {
+        int index = 0;
+
+        while (isPlayingPlaylist)
+        {
+            AudioClip clipToPlay = currentPlaylist[index];
+
+            musicSource.clip = clipToPlay;
+            musicSource.loop = false;
+            musicSource.Play();
+
+            yield return new WaitForSeconds(clipToPlay.length);
+
+            index++;
+            if (index >= currentPlaylist.Count) index = 0;
+        }
+    }
+
+    // --- PØEHRÁVÁNÍ NÁHODNÉ BOSS HUDBY (Pro ostatní bosse) ---
     public void PlayRandomBossTheme()
     {
-        if (bossMusicList == null || bossMusicList.Length == 0)
-        {
-            Debug.LogWarning("V AudioManageru chybí seznam Boss hudby!");
-            return;
-        }
+        isPlayingPlaylist = false;
+        StopAllCoroutines();
 
-        // 1. Vybereme náhodnou skladbu
+        if (bossMusicList == null || bossMusicList.Length == 0) return;
+
         int randomIndex = UnityEngine.Random.Range(0, bossMusicList.Length);
         AudioClip selectedClip = bossMusicList[randomIndex];
 
-        // 2. Spustíme ji s pøechodem
-        PlayBossMusic(selectedClip);
+        StartCoroutine(CrossFadeMusic(selectedClip, true));
     }
 
-    public void PlayBossMusic(AudioClip bossClip)
-    {
-        // Pokud už hraje, nic nedìlej
-        if (musicSource.clip == bossClip && musicSource.isPlaying) return;
+    // --- FADES ---
 
-        StartCoroutine(CrossFadeMusic(bossClip));
-    }
-
-    // Tady už to nebude házet chybu, protože máme 'using System.Collections;'
-    IEnumerator CrossFadeMusic(AudioClip newClip)
+    IEnumerator CrossFadeMusic(AudioClip newClip, bool loop)
     {
         float fadeDuration = 1.0f;
         float targetVolume = PlayerPrefs.GetFloat("MusicVolume", 1f);
@@ -161,6 +212,7 @@ public class AudioManager : MonoBehaviour
 
         musicSource.Stop();
         musicSource.clip = newClip;
+        musicSource.loop = loop;
         musicSource.Play();
 
         // Fade In
@@ -169,33 +221,13 @@ public class AudioManager : MonoBehaviour
             musicSource.volume += targetVolume * Time.deltaTime / fadeDuration;
             yield return null;
         }
-
         musicSource.volume = targetVolume;
     }
 
-    public void StopMusic()
-    {
-        StartCoroutine(FadeOutAndStop());
-    }
-
-    IEnumerator FadeOutAndStop()
-    {
-        float startVolume = musicSource.volume;
-        while (musicSource.volume > 0)
-        {
-            musicSource.volume -= startVolume * Time.deltaTime / 1.0f;
-            yield return null;
-        }
-        musicSource.Stop();
-        musicSource.volume = startVolume;
-    }
-
-
-    // --- PØEHRÁVÁNÍ SFX ---
     public void PlaySFX(string name)
     {
         Sound s = Array.Find(sfxSounds, x => x.name == name);
-        if (s == null) { Debug.LogWarning("SFX '" + name + "' nenalezen!"); return; }
+        if (s == null) return;
 
         sfxSource.pitch = UnityEngine.Random.Range(0.9f, 1.1f);
         sfxSource.PlayOneShot(s.clip);

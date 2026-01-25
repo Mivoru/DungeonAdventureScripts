@@ -4,8 +4,8 @@ using UnityEngine;
 public class EntRootTrap : MonoBehaviour
 {
     [Header("Timing Settings")]
-    public float activationDelay = 0.5f; // <--- NOVÉ: Èas od spawnu do "kousnutí" (Cooldown)
-    public float trapDuration = 2.0f;    // Celková životnost objektu (musí být víc než activationDelay)
+    public float activationDelay = 0.5f;
+    public float trapDuration = 2.0f;
 
     [Header("Combat Settings")]
     public float stunDuration = 1.5f;
@@ -18,7 +18,7 @@ public class EntRootTrap : MonoBehaviour
     {
         anim = GetComponent<Animator>();
 
-        // Znièíme objekt po celkové dobì (úklid)
+        // Znièíme objekt po celkové dobì
         Destroy(gameObject, trapDuration);
 
         // Spustíme odpoèet do aktivace
@@ -27,14 +27,10 @@ public class EntRootTrap : MonoBehaviour
 
     IEnumerator ActivationRoutine()
     {
-        // 1. Èekáme (Cooldown/Varování)
-        // Hráè má tento èas na to, aby utekl z kruhu
+        // 1. Èekání (Cooldown)
         yield return new WaitForSeconds(activationDelay);
 
         // 2. Kousnutí!
-        // (Pokud máš v animaci speciální moment pro kousnutí, 
-        //  mùžeš to naèasovat tak, aby activationDelay odpovídalo délce "pøípravné" fáze animace)
-
         CheckCapture();
     }
 
@@ -42,32 +38,35 @@ public class EntRootTrap : MonoBehaviour
     {
         if (hasTriggered) return;
 
-        // Kruhový test kolize pøesnì v místì pasti
+        // Kruhový test kolize
         Collider2D hit = Physics2D.OverlapCircle(transform.position, 0.5f, LayerMask.GetMask("Player"));
 
         if (hit != null)
         {
+            // Získám PlayerStats (nový centrální mozek)
             PlayerStats stats = hit.GetComponent<PlayerStats>();
-            PlayerMovement move = hit.GetComponent<PlayerMovement>();
 
-            // Udìlit damage
             if (stats != null)
             {
+                // A) Udìlit damage
                 stats.TakeDamage(damage);
-            }
 
-            // Aplikovat Stun
-            if (move != null)
-            {
+                // B) Aplikovat Stun (Zpomalení na 0%)
                 Debug.Log("HRÁÈ CHYCEN DO KOØENÙ!");
-                move.ApplySlow(stunDuration, 0f);
+
+                // Používáme novou metodu v PlayerStats
+                // Parametry: (faktor 0 = úplné zastavení, doba trvání)
+                stats.ApplySlowness(0f, stunDuration);
             }
 
             hasTriggered = true;
         }
     }
 
-    // Poznámka: OnTriggerEnter2D jsme odstranili, protože chceme, 
-    // aby past "klapla" v jeden konkrétní moment, ne aby fungovala jako nášlapná mina.
-    // Pokud v ní hráè v èase 'activationDelay' nestojí, má štìstí.
+    // Vizualizace pro editor (aby jsi vidìl, jak velká je past)
+    void OnDrawGizmos()
+    {
+        Gizmos.color = Color.red;
+        Gizmos.DrawWireSphere(transform.position, 0.5f);
+    }
 }

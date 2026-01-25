@@ -1,55 +1,68 @@
 using UnityEngine;
-using UnityEngine.Rendering.Universal; // Pro praci se svetly
+using UnityEngine.Rendering.Universal;
 
 public class DayNightCycle : MonoBehaviour
 {
     [Header("Propojení")]
-    public Transform player;        // Sem pøetáhni Hráèe
-    public Transform sunSystem;     // Sem pøetáhni ten prázdný objekt "SunSystem"
-    public Light2D sunLight;        // Sem pøetáhni Spot Light (Slunce)
-    public Light2D globalLight;     // Sem pøetáhni Global Light
+    public Transform player;
+    public Transform sunSystem;
+    public Light2D globalLight;
 
-    [Header("Nastavení Slunce")]
-    public float sunDistance = 20f; // Jak daleko je slunce od hráèe
+    [Header("Dvojité Slunce (Stejný smìr)")]
+    public Light2D hardShadowSun;   // 1. Svìtlo: Dìlá stíny (krátký radius, ostré)
+    public Light2D softFillSun;     // 2. Svìtlo: Nedìlá stíny (velký radius, mìkké)
+
+    [Header("Nastavení")]
+    public float sunDistance = 20f; // Jak daleko obíhají
 
     [Header("Barvy a Èas")]
-    public Gradient ambientColor;   // Barva dne (Global Light)
-    public Gradient sunColor;       // Barva slunce
+    public Gradient ambientColor;   // Barva okolí (Global Light)
+    public Gradient sunColor;       // Barva obou sluncí
 
     void Update()
     {
         if (TimeManager.instance == null) return;
 
-        // Získání èasu (0.0 až 1.0)
         float time = TimeManager.instance.currentTime;
 
-        // --- 1. POHYB: Slunce pronásleduje hráèe ---
+        // --- 1. POHYB ---
         if (player != null && sunSystem != null)
         {
-            // Pivot se drží pøesnì na pozici hráèe
             sunSystem.position = player.position;
         }
 
-        // --- 2. ROTACE: Slunce obíhá kolem hráèe ---
+        // --- 2. ROTACE ---
         if (sunSystem != null)
         {
-            // Pøevod èasu na úhel (Ráno -90, Poledne 0, Veèer 90)
-            // Celý kruh je 360 stupòù
             float angle = (time * 360f) - 90f;
-
-            // Otoèíme celým systémem
             sunSystem.rotation = Quaternion.Euler(0, 0, angle);
         }
 
-        // --- 3. VZDÁLENOST: Nastavení vzdálenosti slunce ---
-        // Slunce (dítì) posuneme lokálnì po ose X nebo Y, aby kroužilo
-        if (sunLight != null)
+        // --- 3. POZICE A BARVA SVÌTEL ---
+        // Vypoèítáme pozici jednou, platí pro obì svìtla
+        Vector3 sunPos = new Vector3(sunDistance, 0, 0);
+        Color currentSunColor = sunColor.Evaluate(time);
+
+        // A) Hard Sun (Stíny)
+        if (hardShadowSun != null)
         {
-            sunLight.transform.localPosition = new Vector3(sunDistance, 0, 0);
+            hardShadowSun.transform.localPosition = sunPos;
+            hardShadowSun.color = currentSunColor;
         }
 
-        // --- 4. BARVY: Zmìna barev podle èasu ---
-        if (globalLight != null) globalLight.color = ambientColor.Evaluate(time);
-        if (sunLight != null) sunLight.color = sunColor.Evaluate(time);
+        // B) Soft Sun (Fill - bez stínù)
+        if (softFillSun != null)
+        {
+            // Úplnì stejná pozice jako Hard Sun
+            softFillSun.transform.localPosition = sunPos;
+            // Úplnì stejná barva
+            softFillSun.color = currentSunColor;
+        }
+
+        // --- 4. GLOBAL LIGHT ---
+        if (globalLight != null)
+        {
+            globalLight.color = ambientColor.Evaluate(time);
+        }
     }
 }

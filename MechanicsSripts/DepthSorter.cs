@@ -1,44 +1,37 @@
 using UnityEngine;
+using UnityEngine.Rendering; // Potøeba pro SortingGroup (volitelné)
 
-[RequireComponent(typeof(SpriteRenderer))]
-public class DepthSorter : MonoBehaviour
+public class UniversalDepthSorter : MonoBehaviour
 {
     [Header("Settings")]
-    public bool isStatic = false; // Zaškrtni pro stromy/kameny (ušetøí vıkon)
-    public float offset = 0f;     // Doladìní (kdyby se to pøekrıvalo špatnì)
-
-    // Èím vyšší èíslo, tím pøesnìjší tøídìní (100 je standard)
+    public bool isStatic = false;
+    public float offset = 0f;
     private const int SORTING_ORDER_MULTIPLIER = 100;
 
-    private SpriteRenderer sr;
+    private Renderer rend; // Bere SpriteRenderer I TilemapRenderer
 
     void Start()
     {
-        sr = GetComponent<SpriteRenderer>();
+        rend = GetComponent<Renderer>(); // Najde jakıkoliv renderer
 
-        // Pro statické objekty (stromy) nastavíme jednou a hotovo
         if (isStatic)
         {
             UpdateSortingOrder();
-            enabled = false; // Vypneme Update, a to neere vıkon
+            enabled = false;
         }
     }
 
     void Update()
     {
-        // Pro pohyblivé objekty (hráè, monstra) aktualizujeme kadı snímek
         UpdateSortingOrder();
     }
 
     void UpdateSortingOrder()
     {
-        if (sr == null) return;
+        if (rend == null) return;
 
-        // Vypoèítáme Y pozici spodní hrany spritu (nohy)
-        // sr.bounds.min.y nám dá pøesnì spodní okraj obrázku ve svìtì
-        float bottomY = sr.bounds.min.y + offset;
-
-        // Vzorec: Èím niší Y (dole na obrazovce), tím vyšší Order (vykreslí se pøes ostatní)
-        sr.sortingOrder = -(int)(bottomY * SORTING_ORDER_MULTIPLIER);
+        // Renderer.bounds funguje pro oba typy stejnì
+        float bottomY = rend.bounds.min.y + offset;
+        rend.sortingOrder = -(int)(bottomY * SORTING_ORDER_MULTIPLIER);
     }
 }

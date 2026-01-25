@@ -46,6 +46,11 @@ public class PlayerStats : CharacterStats
     private SpriteRenderer sr;
     private Color originalColor = Color.white;
 
+    [Header("Movement Reference")]
+    public PlayerMovement movementScript; // PØETÁHNI SEM HRÁÈE V INSPECTORU!
+    //private float originalSpeed;
+    private Coroutine slowCoroutine;
+
 
     // --- SNAPSHOT DATA (Pro návrat po smrti) ---
     private int savedLevel;
@@ -108,6 +113,7 @@ public class PlayerStats : CharacterStats
     public override void Start()
     {
         base.Start();
+        //if (movementScript != null) originalSpeed = movementScript.moveSpeed;
         FindUIElements();
         UpdateLevelUI();
 
@@ -142,6 +148,37 @@ public class PlayerStats : CharacterStats
         // Návrat barvy
         if (sr != null) sr.color = originalColor;
         isPoisoned = false;
+    }
+    public void ApplySlowness(float slowFactor, float duration)
+    {
+        if (movementScript == null) return;
+
+        // Pokud už je zpomalený, resetujeme timer (zastavíme starou coroutinu)
+        if (slowCoroutine != null) StopCoroutine(slowCoroutine);
+
+        slowCoroutine = StartCoroutine(SlowRoutine(slowFactor, duration));
+    }
+
+    IEnumerator SlowRoutine(float factor, float duration)
+    {
+        // OPRAVA: Místo 'moveSpeed' mìníme 'slowMultiplier'
+        if (movementScript != null)
+        {
+            movementScript.slowMultiplier = factor;
+        }
+
+        // Debug.Log("Hráè zpomalen!");
+
+        yield return new WaitForSeconds(duration);
+
+        // Návrat na plnou rychlost
+        if (movementScript != null)
+        {
+            movementScript.slowMultiplier = 1f;
+        }
+
+        slowCoroutine = null;
+        // Debug.Log("Rychlost obnovena.");
     }
     // --- SNAPSHOT SYSTÉM ---
     // Zavolá GameManager pøed vstupem do Dungeonu
@@ -319,20 +356,50 @@ public class PlayerStats : CharacterStats
         if (isDead) return;
         int finalDamage = Mathf.Max(1, damage - defense);
 
+        // --- Plovoucí text ---
         if (FloatingTextManager.instance != null)
         {
-            // ZDE POUŽIJEME damageOffset
-            // (false na konci znamená, že to není heal, ale damage)
             FloatingTextManager.instance.ShowDamage(finalDamage, transform.position + damageOffset, isCrit);
         }
 
+        // --- Volání rodièe (odeètení HP) ---
         base.TakeDamage(finalDamage, isCrit);
+
+        // --- Zvuk a Animace ---
         AudioManager.instance.PlaySFX("PlayerHit");
 
         if (currentHealth > 0)
         {
             Animator anim = GetComponent<Animator>();
             if (anim != null) anim.SetTrigger("Hit");
+
+            // --- NOVÉ: Spustíme èervené probliknutí ---
+            StartCoroutine(DamageFlash());
+        }
+    }
+
+    // --- NOVÁ COROUTINA PRO BLIKÁNÍ ---
+    IEnumerator DamageFlash()
+    {
+        // 1. Okamžitì zèervenáme (èistì èervená barva)
+        if (sr != null) sr.color = Color.red;
+
+        // 2. Poèkáme malou chvilku (0.1 sekundy je standard pro "hit")
+        yield return new WaitForSeconds(0.1f);
+
+        // 3. Návrat barvy (Chytrá kontrola)
+        if (sr != null)
+        {
+            if (isPoisoned)
+            {
+                // Pokud jsme stále otrávení, vrátíme se k zelené
+                sr.color = Color.green;
+            }
+            else
+            {
+                // Jinak se vrátíme k normálu (originalColor si ukládáš ve Startu)
+                sr.color = originalColor;
+            }
         }
     }
 

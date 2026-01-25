@@ -110,7 +110,7 @@ public class ClosterAI : MonoBehaviour
     }
 
     // --- DAMAGE SYSTÉM (Pøevedeno ze SkeletonWarriorAI) ---
-
+    /*  */
     void DealDamage(int dmg, float range)
     {
         Collider2D[] hits = Physics2D.OverlapCircleAll(transform.position, range, playerLayer);
